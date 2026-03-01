@@ -14,7 +14,7 @@ const { authenticate, requireAdmin } = require('./middleware/auth');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: { origin: '*' } // Be more restrictive in production
+    cors: { origin: true, credentials: true }
 });
 
 app.use(cors());
