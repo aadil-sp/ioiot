@@ -17,56 +17,62 @@ export default function Register() {
             const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/register`, { username, password });
             setMsg(res.data.message);
             setError('');
-            setTimeout(() => navigate('/login'), 2000);
+            setTimeout(() => navigate('/login'), 2500);
         } catch (err) {
-            setError(err.response?.data?.error || 'Registration failed');
+            setError(err.response?.data?.error || 'Registration sequence failed.');
         }
     };
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="max-w-md w-full mt-20 p-8 glass-panel rounded-2xl border border-white/10 shadow-2xl"
-        >
-            <div className="flex flex-col items-center mb-8">
-                <div className="w-16 h-16 bg-cyan-500/20 rounded-full flex items-center justify-center mb-4 border border-cyan-500/30">
-                    <UserPlus className="w-8 h-8 text-cyan-400" />
+        <div className="flex justify-center items-center w-full min-h-[70vh]">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                className="w-full max-w-sm p-8 sm:p-10 bg-[#0A0A0A] rounded-3xl border border-orange-500/30 shadow-[0_0_50px_-15px_#f973164d] hover:shadow-[0_0_50px_-10px_#f9731680] transition-shadow duration-500"
+            >
+                <div className="flex flex-col items-center mb-8">
+                    <div className="w-20 h-20 bg-orange-950/40 rounded-2xl flex items-center justify-center mb-6 border border-orange-500/50 shadow-[0_0_20px_#f9731666]">
+                        <UserPlus className="w-10 h-10 text-orange-500" strokeWidth={1.5} />
+                    </div>
+                    <h2 className="text-3xl font-bold tracking-widest uppercase text-white">ENROLL</h2>
+                    <p className="text-orange-500/70 text-sm mt-2 tracking-widest uppercase">Secure Identity</p>
                 </div>
-                <h2 className="text-3xl font-bold">Create Node</h2>
-                <p className="text-gray-400 mt-2">Sign up for an IoIoT identity</p>
-            </div>
 
-            {msg && <div className="bg-green-500/10 border border-green-500/50 text-green-400 p-3 rounded-lg mb-4 text-center">{msg}</div>}
-            {error && <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg mb-4 text-center">{error}</div>}
+                {msg && <div className="bg-orange-950/50 border-l-4 border-orange-400 text-orange-300 p-3 mb-6 text-sm text-center">{msg}</div>}
+                {error && <div className="bg-red-950/50 border-l-4 border-red-500 text-red-400 p-3 mb-6 text-sm text-center">{error}</div>}
 
-            <form onSubmit={handleRegister} className="space-y-4">
-                <div>
-                    <label className="block text-sm text-gray-400 mb-1">Username</label>
-                    <input
-                        type="text"
-                        className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        required
-                    />
+                <form onSubmit={handleRegister} className="space-y-6">
+                    <div className="space-y-1">
+                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Desired ID</label>
+                        <input
+                            type="text"
+                            className="w-full bg-[#111] border-b-2 border-[#333] p-3 text-white focus:outline-none focus:border-orange-500 transition-colors font-mono tracking-wider"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Passphrase</label>
+                        <input
+                            type="password"
+                            className="w-full bg-[#111] border-b-2 border-[#333] p-3 text-white focus:outline-none focus:border-orange-500 transition-colors font-mono tracking-widest"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <button className="w-full bg-orange-600 hover:bg-orange-500 text-black font-bold uppercase tracking-widest py-4 mt-8 transition-all hover:shadow-[0_0_25px_#f97316b3] group relative overflow-hidden">
+                        <span className="relative z-10">Establish</span>
+                        <div className="absolute inset-0 bg-white/20 translate-y-[100%] group-hover:translate-y-[0%] transition-transform duration-300 pointer-events-none"></div>
+                    </button>
+                </form>
+                <div className="mt-8 text-center">
+                    <Link to="/login" className="text-xs text-[#666] uppercase tracking-widest hover:text-orange-400 transition-colors">
+                        [ Return to Access ]
+                    </Link>
                 </div>
-                <div>
-                    <label className="block text-sm text-gray-400 mb-1">Password</label>
-                    <input
-                        type="password"
-                        className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                    />
-                </div>
-                <button className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold py-3 rounded-lg mt-4 transition-all shadow-lg shadow-cyan-500/30 hover:shadow-cyan-400/50">
-                    Register Identity
-                </button>
-            </form>
-            <p className="text-gray-400 text-sm mt-6 text-center">
-                Already have an entry? <Link to="/login" className="text-cyan-400 hover:text-cyan-300">Login</Link>
-            </p>
-        </motion.div>
+            </motion.div>
+        </div>
     );
 }

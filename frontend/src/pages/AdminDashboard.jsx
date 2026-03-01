@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, ShieldCheck } from 'lucide-react';
+import { Users, ShieldAlert } from 'lucide-react';
 import { motion } from 'framer-motion';
 import DeviceControl from '../components/DeviceControl';
 
@@ -34,31 +34,58 @@ export default function AdminDashboard() {
     };
 
     return (
-        <div className="w-full max-w-6xl flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center gap-3">
-                <ShieldCheck className="w-8 h-8 text-cyan-400" />
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Admin Dashboard</h2>
+        <div className="w-full flex flex-col gap-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
+
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[#333] pb-6">
+                <div>
+                    <h2 className="text-4xl lg:text-5xl font-black uppercase tracking-widest text-white mb-2">SYSTEM<span className="text-orange-500">_ADMIN</span></h2>
+                    <p className="text-[#888] font-mono tracking-widest text-sm">SECURE COMMAND LINE</p>
+                </div>
+                <div className="bg-[#111] px-4 py-2 rounded-lg border border-orange-500/30 flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-orange-500" />
+                    <span className="text-xs uppercase tracking-widest font-bold text-orange-400">Clearance Level: OMEGA</span>
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-1 space-y-4">
-                    <div className="glass-panel p-6 rounded-2xl">
-                        <div className="flex items-center gap-2 mb-4 text-xl font-semibold border-b border-white/10 pb-2">
-                            <Users className="w-5 h-5 text-purple-400" /> User Approvals
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-10 items-start">
+
+                {/* User Management Panel */}
+                <div className="xl:col-span-4 space-y-4">
+                    <div className="bg-[#0A0A0A] p-8 rounded-3xl border border-orange-500/20 shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 blur-[50px]"></div>
+
+                        <div className="flex items-center gap-3 mb-6 border-b border-[#333] pb-4">
+                            <Users className="w-6 h-6 text-red-500" />
+                            <h3 className="text-lg font-bold uppercase tracking-widest text-white">Access Requests</h3>
                         </div>
+
                         {users.length === 0 ? (
-                            <p className="text-gray-400 text-sm">No users pending or found.</p>
+                            <div className="bg-[#111] p-6 text-center border border-dashed border-[#333] rounded-xl flex items-center justify-center">
+                                <span className="text-[#555] font-mono text-sm tracking-widest">NO_PENDING_REQUESTS_</span>
+                            </div>
                         ) : (
-                            <div className="space-y-3">
-                                {users.map(u => (
-                                    <motion.div key={u._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scroll">
+                                {users.map((u, i) => (
+                                    <motion.div
+                                        initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
+                                        key={u._id}
+                                        className="flex flex-col sm:flex-row justify-between sm:items-center bg-[#111] p-5 rounded-xl border border-orange-500/10 hover:border-orange-500/40 transition-colors gap-4"
+                                    >
                                         <div>
-                                            <span className="block font-medium">{u.username}</span>
-                                            <span className="text-xs text-gray-400">Status: {u.isApproved ? <span className="text-green-400">Approved</span> : <span className="text-yellow-400">Pending</span>}</span>
+                                            <span className="block font-mono text-lg font-bold text-gray-200">@{u.username}</span>
+                                            <span className="text-[10px] uppercase tracking-widest font-mono mt-1 block">
+                                                STATE:
+                                                {u.isApproved
+                                                    ? <span className="text-green-500 ml-2 drop-shadow-[0_0_5px_#22c55ecc]">_AUTHORIZED</span>
+                                                    : <span className="text-red-500 ml-2 drop-shadow-[0_0_5px_#ef4444cc]">_RESTRICTED</span>}
+                                            </span>
                                         </div>
                                         {!u.isApproved && (
-                                            <button onClick={() => approveUser(u._id)} className="bg-purple-500 hover:bg-purple-600 text-xs px-3 py-1 rounded-md transition shadow-lg shadow-purple-500/20">
-                                                Approve
+                                            <button
+                                                onClick={() => approveUser(u._id)}
+                                                className="bg-orange-500/10 border border-orange-500/50 hover:bg-orange-500 text-orange-400 hover:text-black font-semibold text-xs tracking-widest uppercase px-4 py-2 rounded transition-all"
+                                            >
+                                                Grant
                                             </button>
                                         )}
                                     </motion.div>
@@ -68,9 +95,9 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
-                <div className="lg:col-span-2">
-                    {/* Admin also sees the single device */}
-                    <DeviceControl deviceId="device-001" />
+                {/* Console / Map / Remote Array */}
+                <div className="xl:col-span-8">
+                    <DeviceControl deviceId="device-001" isAdmin={true} />
                 </div>
             </div>
         </div>

@@ -1,37 +1,29 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @layer base {
   body {
-    @apply bg-[#0a0f1d] text-gray-100 font-sans antialiased selection:bg-cyan-500/30;
+    @apply bg-[#050505] text-gray-100 font-sans antialiased selection:bg-orange-500/30;
   }
 }
 
 .glass-panel {
-  @apply bg-white/5 backdrop-blur-lg border border-white/10 shadow-xl;
+  @apply bg-[#111111]/80 backdrop-blur-xl border border-orange-500/20 shadow-[0_4px_30px_#f973161a];
 }
 
-.tgl-btn {
-  @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#0a0f1d];
+/* Custom Webkit Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
 }
 
-.tgl-btn[data-state="true"] {
-  @apply bg-cyan-500;
+::-webkit-scrollbar-track {
+  background: #050505;
 }
 
-.tgl-btn[data-state="false"] {
-  @apply bg-gray-600;
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
 }
 
-.tgl-thumb {
-  @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform;
-}
-
-.tgl-btn[data-state="true"] .tgl-thumb {
-  @apply translate-x-6;
-}
-
-.tgl-btn[data-state="false"] .tgl-thumb {
-  @apply translate-x-1;
+::-webkit-scrollbar-thumb:hover {
+  background: #f97316;
 }
