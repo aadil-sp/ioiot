@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0a0f1d] text-gray-100 font-sans antialiased selection:bg-cyan-500/30;
+  }
+}
+
+.glass-panel {
+  @apply bg-white/5 backdrop-blur-lg border border-white/10 shadow-xl;
+}
+
+.tgl-btn {
+  @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-[#0a0f1d];
+}
+
+.tgl-btn[data-state="true"] {
+  @apply bg-cyan-500;
+}
+
+.tgl-btn[data-state="false"] {
+  @apply bg-gray-600;
+}
+
+.tgl-thumb {
+  @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform;
+}
+
+.tgl-btn[data-state="true"] .tgl-thumb {
+  @apply translate-x-6;
+}
+
+.tgl-btn[data-state="false"] .tgl-thumb {
+  @apply translate-x-1;
+}

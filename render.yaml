@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ioiot-backend
+    env: node
+    repo: https://github.com/aadilsp/IoIoT # Update if different
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node index.js
+    envVars:
+      - key: MONGO_URI
+        sync: false # User must set this in dashboard
+      - key: JWT_SECRET
+        generateValue: true
