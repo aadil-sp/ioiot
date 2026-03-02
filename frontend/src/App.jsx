@@ -6,6 +6,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
 import DeviceDetail from './pages/DeviceDetail';
 import Profile from './pages/Profile';
+import Landing from './pages/Landing';
 import { Cpu, LogOut, LayoutDashboard, Shield, Sun, Moon, User, Menu, X } from 'lucide-react';
 
 export const ThemeContext = createContext({ dark: true, toggle: () => { } });
@@ -111,7 +112,7 @@ function AppShell({ auth, setAuth, dark, toggle }) {
             <Route path="/dashboard" element={auth.token ? <UserDashboard /> : <Navigate to="/login" />} />
             <Route path="/device/:id" element={auth.token ? <DeviceDetail /> : <Navigate to="/login" />} />
             <Route path="/profile" element={auth.token ? <Profile /> : <Navigate to="/login" />} />
-            <Route path="/" element={<Navigate to={auth.token ? (auth.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
+            <Route path="/" element={auth.token ? <Navigate to={auth.role === 'admin' ? '/admin' : '/dashboard'} /> : <Landing />} />
           </Routes>
         </div>
       </main>
