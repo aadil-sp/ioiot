@@ -371,5 +371,10 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { });
 });
 
+// Basic health check
+app.get('/', (req, res) => {
+    res.send('<h1>IoIoT Platform v2.0</h1><p>Status: <span style="color: green;">Online</span></p><p>Backend is running on Hugging Face Spaces.</p>');
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`IoIoT Server running on port ${PORT}`));
