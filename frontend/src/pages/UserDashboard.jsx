@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Plus, Cpu, Wifi, WifiOff, Zap, Trash2, ChevronRight, RefreshCw, Bluetooth } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API = import.meta.env.VITE_API_URL || '';
 
 export default function UserDashboard() {
+    const navigate = useNavigate();
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
@@ -149,7 +151,7 @@ export default function UserDashboard() {
                         <motion.div key={device.deviceId}
                             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                             className="group bg-[#0A0A0A] border border-[#1a1a1a] hover:border-orange-500/30 rounded-2xl p-6 flex flex-col gap-4 transition-all relative overflow-hidden cursor-pointer"
-                            onClick={() => window.location.href = `/device/${device.deviceId}`}>
+                            onClick={() => navigate(`/device/${device.deviceId}`)}>
                             <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 blur-[60px] pointer-events-none group-hover:bg-orange-500/10 transition-all"></div>
 
                             <div className="flex items-start justify-between">

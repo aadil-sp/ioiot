@@ -19,7 +19,8 @@ export default function Login() {
             localStorage.setItem('token', res.data.token);
             localStorage.setItem('role', res.data.role);
             localStorage.setItem('username', res.data.username);
-            window.location.href = res.data.role === 'admin' ? '/admin' : '/dashboard';
+            navigate(res.data.role === 'admin' ? '/admin' : '/dashboard');
+            window.location.reload();
         } catch (err) {
             setError(err.response?.data?.error || 'Authentication denied.');
         }

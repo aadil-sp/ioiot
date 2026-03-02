@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Users, Wifi, WifiOff, Check, X, Trash2, Shield, Cpu, RefreshCw, ExternalLink } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || '';
 
 export default function AdminDashboard() {
+    const navigate = useNavigate();
     const [tab, setTab] = useState('devices'); // 'devices' | 'users'
     const [devices, setDevices] = useState([]);
     const [users, setUsers] = useState([]);
@@ -106,10 +108,10 @@ export default function AdminDashboard() {
                                     {device.deviceId} · Owner: <span className="text-orange-500/70">{device.owner?.username || 'unknown'}</span> · {device.pins?.length || 0} pins
                                 </p>
                             </div>
-                            <a href={`/device/${device.deviceId}`}
+                            <button onClick={() => navigate(`/device/${device.deviceId}`)}
                                 className="flex items-center gap-1 text-xs text-[#555] hover:text-orange-500 font-mono transition-all">
                                 <ExternalLink className="w-3.5 h-3.5" /> View
-                            </a>
+                            </button>
                         </motion.div>
                     ))}
                     {devices.length === 0 && (
