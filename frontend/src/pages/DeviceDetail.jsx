@@ -646,9 +646,11 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
 
             addLog(`📤 Flashing ${fileArray.length} files...`);
 
-            await loader.write_flash({
+            await loader.writeFlash({
                 fileArray,
                 flashSize: 'keep',
+                flashMode: 'keep',
+                flashFreq: 'keep',
                 eraseAll: false,
                 compress: true,
                 reportProgress: (fileIndex, written, total) => {
@@ -661,7 +663,7 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
             setFlashProgress(100);
             setFlashDone(true);
             addLog('✅ Flash complete! ESP32 is restarting with your new code.');
-            await loader.hard_reset();
+            await loader.after();
             await transport.disconnect();
         } catch (err) {
             addLog(`❌ Flash failed: ${err.message}`, true);
