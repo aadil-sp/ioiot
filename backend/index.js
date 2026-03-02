@@ -41,11 +41,27 @@ mongoose.connect(MONGO_URI).then(async () => {
         console.log('Test user abhiram seeded');
     }
 
-    // Seed default device
-    const deviceExists = await Device.findOne({ deviceId: 'device-001' });
-    if (!deviceExists) {
-        await Device.create({ deviceId: 'device-001' });
+    // Seed or Update default device
+    let device = await Device.findOne({ deviceId: 'device-001' });
+    const defaultControls = [
+        { key: 'ledG', label: 'LED [ GRN ] // Ch0', icon: 'Zap', activeColor: 'shadow-[0_0_20px_#22c55e99]', handleColor: 'bg-green-500', category: 'logic' },
+        { key: 'ledB', label: 'LED [ BLU ] // Ch1', icon: 'Zap', activeColor: 'shadow-[0_0_20px_#3b82f699]', handleColor: 'bg-blue-500', category: 'logic' },
+        { key: 'ledR', label: 'LED [ RED ] // Ch2', icon: 'Zap', activeColor: 'shadow-[0_0_20px_#ef444499]', handleColor: 'bg-red-500', category: 'logic' },
+        { key: 'flash', label: 'PWR_STROBE // D1_F', icon: 'Zap', activeColor: 'shadow-[0_0_25px_#eab30899]', handleColor: 'bg-yellow-500', category: 'heavy' },
+        { key: 'propeller', label: 'DC_MOTOR // M1_T', icon: 'Fan', activeColor: 'shadow-[0_0_30px_#a855f7cc]', handleColor: 'bg-purple-500', category: 'heavy' }
+    ];
+
+    if (!device) {
+        await Device.create({
+            deviceId: 'device-001',
+            state: { ledG: false, ledB: false, ledR: false, flash: false, propeller: false },
+            controls: defaultControls
+        });
         console.log('Test device seeded');
+    } else if (!device.controls || device.controls.length === 0) {
+        device.controls = defaultControls;
+        await device.save();
+        console.log('Test device updated with default controls');
     }
 }).catch(err => console.error('MongoDB connection error', err));
 
@@ -104,16 +120,31 @@ app.get('/api/devices', authenticate, async (req, res) => {
 });
 
 app.post('/api/devices/:id/toggle', authenticate, async (req, res) => {
-    const { toggleType, state } = req.body; // toggleType: ledG, ledB, ledR, flash, propeller
+    const { toggleType, state } = req.body;
     const device = await Device.findOne({ deviceId: req.params.id });
     if (!device) return res.status(404).json({ error: 'Device not found' });
 
-    device.state[toggleType] = state;
+    device.state.set(toggleType, state);
     await device.save();
 
-    // Notify connected clients (React and ESP)
     io.emit('deviceStateUpdate', { deviceId: device.deviceId, state: device.state });
     res.json(device);
+});
+
+app.post('/api/devices/:id/controls', authenticate, requireAdmin, async (req, res) => {
+    try {
+        const { controls } = req.body;
+        const device = await Device.findOne({ deviceId: req.params.id });
+        if (!device) return res.status(404).json({ error: 'Device not found' });
+
+        device.controls = controls;
+        await device.save();
+
+        io.emit('deviceConfigUpdate', { deviceId: device.deviceId, controls: device.controls });
+        res.json(device);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update controls' });
+    }
 });
 
 // Socket.io for Real-time ESP & Client connections
