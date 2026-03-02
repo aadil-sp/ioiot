@@ -17,6 +17,13 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
     useEffect(() => {
         fetchDevice();
 
+        // --- SERVER KEEP-ALIVE ---
+        // Pings the backend every 5 minutes while the dashboard is open
+        // to prevent Render/Vercel free tier sleep.
+        const heartbeat = setInterval(() => {
+            axios.get(`${import.meta.env.VITE_API_URL || ''}/api/ping`).catch(() => { });
+        }, 300000);
+
         socket.on('deviceStateUpdate', (data) => {
             if (data.deviceId === deviceId) {
                 setDevice(prev => ({ ...prev, state: data.state }));
@@ -36,6 +43,7 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
         });
 
         return () => {
+            clearInterval(heartbeat);
             socket.off('deviceStateUpdate');
             socket.off('deviceStatusUpdate');
             socket.off('deviceConfigUpdate');

@@ -70,6 +70,7 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(serverUrl);
+    http.setTimeout(15000); // 15s timeout to allow for server cold start 🧊
     int httpResponseCode = http.GET();
 
     if (httpResponseCode > 0) {

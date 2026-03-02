@@ -176,6 +176,11 @@ app.get('/api/esp/:id/state', async (req, res) => {
     }
 });
 
+// Keep-Alive Ping
+app.get('/api/ping', (req, res) => {
+    res.json({ status: 'active', timestamp: new Date() });
+});
+
 // Periodic check to mark devices offline (every 10 seconds)
 setInterval(async () => {
     const timeout = new Date(Date.now() - 10000); // 10 seconds ago
