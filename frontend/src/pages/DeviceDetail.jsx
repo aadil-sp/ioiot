@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useContext } from 'react';
+import { useState, useEffect, useCallback, useContext, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { ESPLoader, Transport } from 'esptool-js';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Wifi, WifiOff, Settings, Plus, Trash2, Save,
@@ -522,6 +523,153 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
         } catch (err) { console.error(err); }
     };
 
+    // ── Cloud Compile + Browser Flash State ─────────────────────────────
+    const [selectedBoard, setSelectedBoard] = useState('esp32:esp32:esp32');
+    const [compiling, setCompiling] = useState(false);
+    const [compileLogs, setCompileLogs] = useState([]);
+    const [compiledFiles, setCompiledFiles] = useState(null);
+    const [flashing, setFlashing] = useState(false);
+    const [flashProgress, setFlashProgress] = useState(0);
+    const [flashDone, setFlashDone] = useState(false);
+    const compileLogRef = useRef(null);
+
+    // Auto-scroll compile log
+    useEffect(() => {
+        if (compileLogRef.current) compileLogRef.current.scrollTop = compileLogRef.current.scrollHeight;
+    }, [compileLogs]);
+
+    const BOARDS = [
+        { fqbn: 'esp32:esp32:esp32', label: 'ESP32 Dev Module (most common)' },
+        { fqbn: 'esp32:esp32:esp32s2', label: 'ESP32-S2' },
+        { fqbn: 'esp32:esp32:esp32s3', label: 'ESP32-S3' },
+        { fqbn: 'esp32:esp32:esp32c3', label: 'ESP32-C3' },
+        { fqbn: 'esp32:esp32:nodemcu-32s', label: 'NodeMCU-32S' },
+        { fqbn: 'esp32:esp32:wemos_d1_mini32', label: 'Wemos D1 Mini32' },
+    ];
+
+    const compileCode = async () => {
+        setCompiling(true);
+        setCompileLogs([]);
+        setCompiledFiles(null);
+        setFlashDone(false);
+        setFlashProgress(0);
+
+        const code = generateCode();
+        const addLog = (text, isError = false) => {
+            setCompileLogs(prev => [...prev, { text, isError, time: new Date().toLocaleTimeString() }]);
+        };
+
+        try {
+            const response = await fetch(`${API}/api/compile`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({ code, board: selectedBoard })
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                addLog(err.error || 'Compile request failed', true);
+                setCompiling(false);
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split('\n');
+                buf = lines.pop();
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    try {
+                        const ev = JSON.parse(line.slice(6));
+                        if (ev.type === 'log') addLog(ev.data);
+                        else if (ev.type === 'binary') {
+                            setCompiledFiles(ev.data.files);
+                            addLog(`⚡ Binary ready — ${ev.data.files.length} files to flash`);
+                        }
+                        else if (ev.type === 'error') addLog(ev.data, true);
+                    } catch { }
+                }
+            }
+        } catch (err) {
+            addLog(`Compile request failed: ${err.message}`, true);
+        }
+        setCompiling(false);
+    };
+
+    const flashToESP32 = async () => {
+        if (!compiledFiles || !supportsWebSerial) return;
+        setFlashing(true);
+        setFlashProgress(0);
+        setFlashDone(false);
+
+        const addLog = (text, isError = false) => {
+            setCompileLogs(prev => [...prev, { text, isError, time: new Date().toLocaleTimeString() }]);
+        };
+
+        let transport;
+        try {
+            const port = await navigator.serial.requestPort();
+            transport = new Transport(port, true);
+
+            const terminalLogger = {
+                clean() { },
+                writeLine(data) { if (data?.trim()) addLog(data.trim()); },
+                write(data) { }
+            };
+
+            const loader = new ESPLoader({
+                transport,
+                baudrate: 921600,
+                romBaudrate: 115200,
+                terminal: terminalLogger,
+                debugLogging: false
+            });
+
+            addLog('🔌 Connecting to ESP32... (hold BOOT button if it fails)');
+            await loader.main();
+            addLog(`📜 Chip detected: ${loader.chip.CHIP_NAME}`);
+
+            // Convert base64 to binary strings for esptool-js
+            const fileArray = compiledFiles.map(f => ({
+                address: f.address,
+                data: atob(f.data)
+            }));
+
+            addLog(`📤 Flashing ${fileArray.length} files...`);
+
+            await loader.write_flash({
+                fileArray,
+                flashSize: 'keep',
+                eraseAll: false,
+                compress: true,
+                reportProgress: (fileIndex, written, total) => {
+                    const pct = Math.round((written / total) * 100);
+                    setFlashProgress(pct);
+                    if (pct % 20 === 0) addLog(`→ File ${fileIndex + 1}: ${pct}%`);
+                }
+            });
+
+            setFlashProgress(100);
+            setFlashDone(true);
+            addLog('✅ Flash complete! ESP32 is restarting with your new code.');
+            await loader.hard_reset();
+            await transport.disconnect();
+        } catch (err) {
+            addLog(`❌ Flash failed: ${err.message}`, true);
+            if (transport) try { await transport.disconnect(); } catch { }
+        }
+        setFlashing(false);
+    };
+
     if (loading) return (
         <div className="flex items-center justify-center h-96">
             <div className="w-12 h-12 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
@@ -626,8 +774,8 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                 ].map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
                         className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg font-mono font-bold text-xs sm:text-sm transition-all ${tab === t.key
-                                ? (t.beta && betaMode ? 'bg-purple-500 text-white' : 'bg-orange-500 text-black')
-                                : dark ? 'text-[#555] hover:text-white' : 'text-gray-400 hover:text-gray-900'
+                            ? (t.beta && betaMode ? 'bg-purple-500 text-white' : 'bg-orange-500 text-black')
+                            : dark ? 'text-[#555] hover:text-white' : 'text-gray-400 hover:text-gray-900'
                             }`}>
                         {t.icon}
                         <span className="hidden sm:inline">{t.label}</span>
@@ -772,16 +920,104 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                 {tab === 'flash' && (
                     <motion.div key="flash" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
 
-                        {/* Platform Banner */}
+                        {/* ── Compile & Flash Panel ── */}
+                        <div className={`p-5 border rounded-2xl ${betaMode ? 'border-purple-500/30 bg-purple-500/5' : card}`}>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-lg">🚀</span>
+                                        <h3 className={`font-mono font-bold text-sm uppercase tracking-widest ${betaMode ? 'text-purple-400' : dark ? 'text-white' : 'text-gray-900'}`}>
+                                            Compile &amp; Flash
+                                        </h3>
+                                        {betaMode && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-400/20 text-purple-300">BETA</span>}
+                                    </div>
+                                    <p className={`font-mono text-xs ${mutedText}`}>
+                                        {betaMode
+                                            ? 'Cloud-compile your code then flash directly to ESP32 over USB'
+                                            : 'Enable Beta Mode in Profile to unlock one-click compile & flash'}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <button onClick={downloadCode}
+                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all ${dark ? 'border-[#333] text-gray-400 hover:text-white' : 'border-gray-300 text-gray-500 hover:text-gray-900'}`}>
+                                        <Download className="w-3.5 h-3.5" /> .ino
+                                    </button>
+                                    {betaMode && (
+                                        <>
+                                            <button onClick={compileCode} disabled={compiling || flashing}
+                                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-500 text-white text-xs font-mono font-bold hover:bg-purple-400 transition-all disabled:opacity-50">
+                                                {compiling
+                                                    ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Compiling...</>
+                                                    : <>⚙️ Compile</>}
+                                            </button>
+                                            <button onClick={flashToESP32}
+                                                disabled={!compiledFiles || flashing || compiling || !supportsWebSerial}
+                                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all disabled:opacity-40 ${flashDone ? 'bg-green-500 text-black' : 'bg-orange-500 text-black hover:bg-orange-400'}`}>
+                                                {flashing
+                                                    ? <><div className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" /> Flashing {flashProgress}%</>
+                                                    : flashDone ? <><Check className="w-3.5 h-3.5" /> Done!</>
+                                                        : <><Usb className="w-3.5 h-3.5" /> Flash to ESP32</>}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {betaMode && (
+                                <div className="mb-4">
+                                    <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>Board / Chip</label>
+                                    <select value={selectedBoard} onChange={e => { setSelectedBoard(e.target.value); setCompiledFiles(null); }}
+                                        className={`w-full border outline-none rounded-xl px-3 py-2 font-mono text-xs transition-colors ${inputCls}`}>
+                                        {BOARDS.map(b => <option key={b.fqbn} value={b.fqbn}>{b.label}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {flashing && (
+                                <div className="mb-4">
+                                    <div className={`w-full h-2 rounded-full overflow-hidden ${dark ? 'bg-[#222]' : 'bg-gray-200'}`}>
+                                        <div className="h-full bg-orange-500 transition-all rounded-full" style={{ width: `${flashProgress}%` }} />
+                                    </div>
+                                    <p className={`font-mono text-xs mt-1 text-center ${mutedText}`}>{flashProgress}% flashed</p>
+                                </div>
+                            )}
+
+                            {(compiling || compileLogs.length > 0) && (
+                                <div ref={compileLogRef} className={`h-44 overflow-y-auto rounded-xl p-3 font-mono text-xs border ${dark ? 'bg-black border-[#1a1a1a]' : 'bg-gray-900 border-gray-700'}`}>
+                                    {compileLogs.map((entry, i) => (
+                                        <div key={i} className={`mb-0.5 flex gap-2 ${entry.isError ? 'text-red-400' : 'text-green-400'}`}>
+                                            <span className="text-[#444] shrink-0">{entry.time}</span>
+                                            <span>{entry.text}</span>
+                                        </div>
+                                    ))}
+                                    {compiling && <div className="text-orange-400 animate-pulse">▌</div>}
+                                </div>
+                            )}
+
+                            {!betaMode && (
+                                <a href="/profile" className="inline-flex items-center gap-2 mt-2 text-orange-500 font-mono text-xs hover:underline">
+                                    → Enable Beta Mode in Profile to compile &amp; flash
+                                </a>
+                            )}
+
+                            {betaMode && !supportsWebSerial && (
+                                <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                                    <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />
+                                    <p className="text-yellow-400 font-mono text-xs">Flashing requires Chrome or Edge on Desktop. Compilation works in any browser.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Platform info + download */}
                         <div className={`p-4 border rounded-xl flex flex-col sm:flex-row sm:items-center gap-3 justify-between ${card}`}>
                             <div className="flex items-center gap-3">
                                 <span className="text-2xl">{os === 'windows' ? '🪟' : os === 'mac' ? '🍎' : os === 'linux' ? '🐧' : os === 'android' ? '🤖' : os === 'ios' ? '📱' : '💻'}</span>
                                 <div>
                                     <p className={`font-mono text-sm font-bold ${dark ? 'text-white' : 'text-gray-900'}`}>
-                                        {os === 'android' ? 'Android Detected' : os === 'ios' ? 'iPhone / iPad Detected' : `${os.charAt(0).toUpperCase() + os.slice(1)} Detected`}
+                                        {os === 'android' ? 'Android' : os === 'ios' ? 'iPhone / iPad' : `${os.charAt(0).toUpperCase() + os.slice(1)}`} Detected
                                     </p>
                                     <p className={`font-mono text-xs ${mutedText}`}>
-                                        {os === 'ios' || os === 'android' ? 'Mobile: Use Arduino Web Editor or OTA update for mobile uploads' : 'Desktop: Arduino IDE or Web Serial (Chrome/Edge) supported'}
+                                        {os === 'ios' || os === 'android' ? 'Use Arduino Web Editor for mobile uploads' : 'Arduino IDE also supported — download .ino and upload manually'}
                                     </p>
                                 </div>
                             </div>

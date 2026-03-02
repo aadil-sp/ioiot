@@ -7,6 +7,10 @@ const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const User = require('./models/User');
 const Device = require('./models/Device');
@@ -392,6 +396,133 @@ io.on('connection', (socket) => {
 // Basic health check
 app.get('/', (req, res) => {
     res.send('<h1>IoIoT Platform v2.0</h1><p>Status: <span style="color: green;">Online</span></p><p>Backend is running on Hugging Face Spaces.</p>');
+});
+
+// ─── ESP32 Compile Endpoint ──────────────────────────────────────────────────
+// Compiles Arduino sketch using arduino-cli and streams logs back as SSE.
+// Returns the compiled binary files as base64 for browser-side flashing via esptool-js.
+app.post('/api/compile', authenticate, async (req, res) => {
+    const { code, board = 'esp32:esp32:esp32' } = req.body;
+    if (!code || !code.trim()) {
+        return res.status(400).json({ error: 'No code provided' });
+    }
+
+    // Check arduino-cli is available
+    const checkCli = spawn('which', ['arduino-cli']);
+    const cliAvailable = await new Promise(r => checkCli.on('close', c => r(c === 0)));
+    if (!cliAvailable) {
+        return res.status(503).json({ error: 'Compilation service not available. arduino-cli is not installed on this server.' });
+    }
+
+    // Set SSE headers for streaming logs
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders();
+
+    const sse = (type, data) => {
+        try { res.write(`data: ${JSON.stringify({ type, data })}\n\n`); } catch { }
+    };
+
+    // Create temp sketch directory
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ioiot-'));
+    const sketchName = 'ioiot_device';
+    const sketchDir = path.join(tempDir, sketchName);
+    const buildDir = path.join(tempDir, 'build');
+
+    try {
+        fs.mkdirSync(sketchDir, { recursive: true });
+        fs.mkdirSync(buildDir, { recursive: true });
+        fs.writeFileSync(path.join(sketchDir, `${sketchName}.ino`), code, 'utf8');
+    } catch (err) {
+        sse('error', `Failed to create temp files: ${err.message}`);
+        res.end();
+        return;
+    }
+
+    sse('log', `🔨 Compiling for board: ${board}`);
+    sse('log', '⏳ First compile may take 30–90 seconds (subsequent compiles are fast due to caching)...');
+
+    const child = spawn('arduino-cli', [
+        'compile',
+        '--fqbn', board,
+        '--output-dir', buildDir,
+        '--warnings', 'none',
+        sketchDir
+    ]);
+
+    child.stdout.on('data', (data) => {
+        data.toString().split('\n').filter(l => l.trim()).forEach(l => sse('log', l.trim()));
+    });
+    child.stderr.on('data', (data) => {
+        data.toString().split('\n').filter(l => l.trim()).forEach(l => {
+            const line = l.trim();
+            // Filter out noise, only show meaningful errors
+            if (!line.startsWith('Using board') && !line.startsWith('Using cache') && !line.includes('Skipping') && !line.includes('DEBUG')) {
+                sse('log', line);
+            }
+        });
+    });
+
+    child.on('close', async (exitCode) => {
+        if (exitCode !== 0) {
+            sse('error', '❌ Compilation failed. Check the code for errors.');
+            res.end();
+            try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
+            return;
+        }
+
+        try {
+            const buildFiles = fs.readdirSync(buildDir);
+            const sketchBinName = buildFiles.find(f => f.endsWith('.bin') && !f.includes('bootloader') && !f.includes('partition'));
+            const bootloaderName = buildFiles.find(f => f.includes('bootloader') && f.endsWith('.bin'));
+            const partitionsName = buildFiles.find(f => f.includes('partition') && f.endsWith('.bin'));
+
+            if (!sketchBinName) {
+                sse('error', 'Compiled binary not found in output directory.');
+                res.end();
+                try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
+                return;
+            }
+
+            const readBin = (name) => {
+                try { return fs.readFileSync(path.join(buildDir, name)).toString('base64'); }
+                catch { return null; }
+            };
+
+            // Find boot_app0.bin from the ESP32 core installation
+            let bootApp0Data = null;
+            try {
+                const bootApp0Path = fs.readFileSync('/boot_app0_path.txt', 'utf8').trim();
+                if (bootApp0Path && fs.existsSync(bootApp0Path)) {
+                    bootApp0Data = fs.readFileSync(bootApp0Path).toString('base64');
+                }
+            } catch { }
+
+            const flashFiles = [];
+            if (bootloaderName) flashFiles.push({ address: 0x1000, data: readBin(bootloaderName), name: 'Bootloader' });
+            if (partitionsName) flashFiles.push({ address: 0x8000, data: readBin(partitionsName), name: 'Partition Table' });
+            if (bootApp0Data) flashFiles.push({ address: 0xe000, data: bootApp0Data, name: 'Boot App0' });
+            flashFiles.push({ address: 0x10000, data: readBin(sketchBinName), name: 'Sketch' });
+
+            const validFiles = flashFiles.filter(f => f.data);
+            const sketchSize = fs.statSync(path.join(buildDir, sketchBinName)).size;
+
+            sse('log', `✅ Compiled successfully! Sketch: ${(sketchSize / 1024).toFixed(1)} KB · ${validFiles.length} files to flash`);
+            sse('binary', { files: validFiles, board });
+        } catch (err) {
+            sse('error', `Post-compile error: ${err.message}`);
+        }
+
+        res.end();
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
+    });
+
+    // If client disconnects, kill the child process
+    req.on('close', () => {
+        try { child.kill('SIGTERM'); } catch { }
+    });
 });
 
 const PORT = process.env.PORT || 5000;
