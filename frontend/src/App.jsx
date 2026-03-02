@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -7,9 +8,13 @@ import DeviceDetail from './pages/DeviceDetail';
 import { Cpu, LogOut, LayoutDashboard, Shield } from 'lucide-react';
 
 function App() {
-  const token = localStorage.getItem('token');
-  const role = localStorage.getItem('role');
-  const username = localStorage.getItem('username');
+  const [auth, setAuth] = useState({
+    token: localStorage.getItem('token'),
+    role: localStorage.getItem('role'),
+    username: localStorage.getItem('username'),
+  });
+
+  const { token, role, username } = auth;
 
   return (
     <BrowserRouter>
@@ -35,7 +40,11 @@ function App() {
                 {role === 'admin' ? 'Admin' : 'Dashboard'}
               </Link>
               <button
-                onClick={() => { localStorage.clear(); window.location.href = '/'; }}
+                onClick={() => {
+                  localStorage.clear();
+                  setAuth({ token: null, role: null, username: null });
+                  window.location.href = '/login';
+                }}
                 className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white transition-all"
               >
                 <LogOut className="w-4 h-4" />
@@ -49,7 +58,7 @@ function App() {
           <div className="absolute top-1/4 left-1/4 w-[50vw] h-[50vh] bg-orange-600/5 rounded-full blur-[120px] pointer-events-none"></div>
           <div className="relative z-10">
             <Routes>
-              <Route path="/login" element={<Login />} />
+              <Route path="/login" element={<Login setAuth={setAuth} />} />
               <Route path="/register" element={<Register />} />
               <Route path="/admin" element={token && role === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
               <Route path="/dashboard" element={token ? <UserDashboard /> : <Navigate to="/login" />} />

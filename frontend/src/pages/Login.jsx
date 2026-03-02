@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Fingerprint, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export default function Login() {
+export default function Login({ setAuth }) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -19,8 +19,12 @@ export default function Login() {
             localStorage.setItem('token', res.data.token);
             localStorage.setItem('role', res.data.role);
             localStorage.setItem('username', res.data.username);
+            setAuth({
+                token: res.data.token,
+                role: res.data.role,
+                username: res.data.username
+            });
             navigate(res.data.role === 'admin' ? '/admin' : '/dashboard');
-            window.location.reload();
         } catch (err) {
             setError(err.response?.data?.error || 'Authentication denied.');
         }
