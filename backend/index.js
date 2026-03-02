@@ -156,7 +156,8 @@ app.put('/api/devices/:id', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        if (device.owner._id.toString() !== req.user.id && req.user.role !== 'admin')
+        const ownerIdPut = (device.owner?._id || device.owner)?.toString();
+        if (ownerIdPut !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
         const { name, wifiSSID, wifiPassword, mode } = req.body;
@@ -177,7 +178,8 @@ app.delete('/api/devices/:id', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        if (device.owner._id.toString() !== req.user.id && req.user.role !== 'admin')
+        const ownerIdDel = (device.owner?._id || device.owner)?.toString();
+        if (ownerIdDel !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
         await device.deleteOne();
         res.json({ message: 'Device deleted' });
@@ -193,7 +195,7 @@ app.put('/api/devices/:id/pins', authenticate, async (req, res) => {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
         // Use _id.toString() to handle populated and unpopulated owner
-        const ownerId = device.owner._id ? device.owner._id.toString() : device.owner.toString();
+        const ownerId = (device.owner?._id || device.owner)?.toString();
         if (ownerId !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
@@ -216,8 +218,8 @@ app.post('/api/devices/:id/control', authenticate, async (req, res) => {
         const { widgetKey, value } = req.body;
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        const ownerId = device.owner._id ? device.owner._id.toString() : device.owner.toString();
-        if (ownerId !== req.user.id && req.user.role !== 'admin')
+        const ownerIdCtrl = (device.owner?._id || device.owner)?.toString();
+        if (ownerIdCtrl !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
         // Update pin value in the pins array
