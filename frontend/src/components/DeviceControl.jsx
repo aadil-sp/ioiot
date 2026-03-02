@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import { Zap, Fan, Server, Radar, Code } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+const socket = io(import.meta.env.VITE_API_URL || '');
 
 export default function DeviceControl({ deviceId, isAdmin }) {
     const [device, setDevice] = useState(null);
@@ -33,7 +33,7 @@ export default function DeviceControl({ deviceId, isAdmin }) {
 
     const fetchDevice = async () => {
         try {
-            const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/devices`, {
+            const res = await axios.get(`${import.meta.env.VITE_API_URL || ''}/api/devices`, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
             const current = res.data.find(d => d.deviceId === deviceId);
@@ -56,7 +56,7 @@ export default function DeviceControl({ deviceId, isAdmin }) {
         }));
 
         try {
-            await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/devices/${deviceId}/toggle`,
+            await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/devices/${deviceId}/toggle`,
                 { toggleType, state: newState },
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         } catch (err) {
