@@ -134,34 +134,40 @@ app.get('/api/devices', authenticate, async (req, res) => {
 // Create device
 app.post('/api/devices', authenticate, async (req, res) => {
     try {
-        const { name } = req.body;
+        const { name, mode } = req.body;
         const deviceId = `device-${crypto.randomBytes(4).toString('hex')}`;
         const device = await Device.create({
             deviceId,
             name: name || 'My New Device',
+            mode: mode || 'wifi',
             owner: req.user.id,
             pins: [],
             state: {}
         });
         res.status(201).json(device);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Failed to create device' });
     }
 });
 
-// Update device name
+// Update device (name, WiFi credentials, mode)
 app.put('/api/devices/:id', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        if (device.owner.toString() !== req.user.id && req.user.role !== 'admin')
+        if (device.owner._id.toString() !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
-        const { name } = req.body;
-        if (name) device.name = name;
+        const { name, wifiSSID, wifiPassword, mode } = req.body;
+        if (name !== undefined) device.name = name;
+        if (wifiSSID !== undefined) device.wifiSSID = wifiSSID;
+        if (wifiPassword !== undefined) device.wifiPassword = wifiPassword;
+        if (mode !== undefined) device.mode = mode;
         await device.save();
         res.json(device);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Update failed' });
     }
 });
@@ -171,11 +177,12 @@ app.delete('/api/devices/:id', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        if (device.owner.toString() !== req.user.id && req.user.role !== 'admin')
+        if (device.owner._id.toString() !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
         await device.deleteOne();
         res.json({ message: 'Device deleted' });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Delete failed' });
     }
 });
@@ -185,16 +192,21 @@ app.put('/api/devices/:id/pins', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        if (device.owner.toString() !== req.user.id && req.user.role !== 'admin')
+        // Use _id.toString() to handle populated and unpopulated owner
+        const ownerId = device.owner._id ? device.owner._id.toString() : device.owner.toString();
+        if (ownerId !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
         const { pins } = req.body;
         device.pins = pins;
+        // Sync state map from pins
+        pins.forEach(p => device.state.set(p.widgetKey, p.value));
         await device.save();
         io.emit('deviceConfigUpdate', { deviceId: device.deviceId, pins: device.pins });
         res.json(device);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to update pins' });
+        console.error('Pin save error:', err);
+        res.status(500).json({ error: 'Failed to update pins', detail: err.message });
     }
 });
 
@@ -204,20 +216,23 @@ app.post('/api/devices/:id/control', authenticate, async (req, res) => {
         const { widgetKey, value } = req.body;
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        if (device.owner.toString() !== req.user.id && req.user.role !== 'admin')
+        const ownerId = device.owner._id ? device.owner._id.toString() : device.owner.toString();
+        if (ownerId !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
-        // Update pin value
-        const pin = device.pins.find(p => p.widgetKey === widgetKey);
-        if (pin) pin.value = value;
+        // Update pin value in the pins array
+        const pinIndex = device.pins.findIndex(p => p.widgetKey === widgetKey);
+        if (pinIndex !== -1) device.pins[pinIndex].value = value;
 
         // Also update state map for ESP32 polling
         device.state.set(widgetKey, value);
+        device.markModified('pins');
         await device.save();
 
         io.emit('deviceStateUpdate', { deviceId: device.deviceId, widgetKey, value, state: Object.fromEntries(device.state) });
         res.json({ widgetKey, value });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Control failed' });
     }
 });

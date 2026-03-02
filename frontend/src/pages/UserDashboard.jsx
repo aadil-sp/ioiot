@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Cpu, Wifi, WifiOff, Zap, Trash2, ChevronRight, RefreshCw } from 'lucide-react';
+import { Plus, Cpu, Wifi, WifiOff, Zap, Trash2, ChevronRight, RefreshCw, Bluetooth } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API = import.meta.env.VITE_API_URL || '';
@@ -10,6 +10,7 @@ export default function UserDashboard() {
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
     const [newDeviceName, setNewDeviceName] = useState('');
+    const [newDeviceMode, setNewDeviceMode] = useState('wifi');
     const [showCreate, setShowCreate] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
 
@@ -22,20 +23,18 @@ export default function UserDashboard() {
             setLoading(true);
             const res = await axios.get(`${API}/api/devices`, { headers });
             setDevices(res.data);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
     };
 
     const createDevice = async () => {
         if (!newDeviceName.trim()) return;
         try {
             setCreating(true);
-            const res = await axios.post(`${API}/api/devices`, { name: newDeviceName }, { headers });
+            const res = await axios.post(`${API}/api/devices`, { name: newDeviceName, mode: newDeviceMode }, { headers });
             setDevices(prev => [res.data, ...prev]);
             setNewDeviceName('');
+            setNewDeviceMode('wifi');
             setShowCreate(false);
         } catch (err) {
             alert('Failed to create device');
@@ -88,17 +87,35 @@ export default function UserDashboard() {
                         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
                             className="bg-[#0A0A0A] border border-orange-500/30 rounded-2xl p-8 w-full max-w-md shadow-2xl">
                             <h3 className="text-xl font-black font-mono uppercase tracking-widest text-orange-500 mb-6">New Device</h3>
+
                             <label className="block text-xs text-[#555] font-mono uppercase tracking-widest mb-2">Device Name</label>
                             <input
                                 value={newDeviceName}
                                 onChange={e => setNewDeviceName(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && createDevice()}
                                 placeholder="e.g. Smart Home Light"
-                                className="w-full bg-black border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-3 text-white font-mono text-sm mb-6"
+                                className="w-full bg-black border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-3 text-white font-mono text-sm mb-5"
                                 autoFocus
                             />
+
+                            <label className="block text-xs text-[#555] font-mono uppercase tracking-widest mb-3">Control Mode</label>
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                <button onClick={() => setNewDeviceMode('wifi')}
+                                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${newDeviceMode === 'wifi' ? 'border-orange-500 bg-orange-500/10' : 'border-[#222] bg-[#0d0d0d] hover:border-[#333]'}`}>
+                                    <Wifi className={`w-6 h-6 ${newDeviceMode === 'wifi' ? 'text-orange-500' : 'text-[#444]'}`} />
+                                    <span className={`font-mono font-bold text-xs uppercase tracking-widest ${newDeviceMode === 'wifi' ? 'text-orange-500' : 'text-[#444]'}`}>WiFi / Cloud</span>
+                                    <span className="text-[10px] text-[#444] font-mono text-center">Control via web dashboard. ESP polls server.</span>
+                                </button>
+                                <button onClick={() => setNewDeviceMode('serial')}
+                                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${newDeviceMode === 'serial' ? 'border-blue-500 bg-blue-500/10' : 'border-[#222] bg-[#0d0d0d] hover:border-[#333]'}`}>
+                                    <Bluetooth className={`w-6 h-6 ${newDeviceMode === 'serial' ? 'text-blue-400' : 'text-[#444]'}`} />
+                                    <span className={`font-mono font-bold text-xs uppercase tracking-widest ${newDeviceMode === 'serial' ? 'text-blue-400' : 'text-[#444]'}`}>Bluetooth / Serial</span>
+                                    <span className="text-[10px] text-[#444] font-mono text-center">Bare-metal. Sends chars to serial input.</span>
+                                </button>
+                            </div>
+
                             <div className="flex gap-3">
-                                <button onClick={() => { setShowCreate(false); setNewDeviceName(''); }}
+                                <button onClick={() => { setShowCreate(false); setNewDeviceName(''); setNewDeviceMode('wifi'); }}
                                     className="flex-1 py-3 rounded-xl border border-[#333] text-gray-400 hover:text-white transition-all font-mono font-bold text-sm">Cancel</button>
                                 <button onClick={createDevice} disabled={creating || !newDeviceName.trim()}
                                     className="flex-1 py-3 rounded-xl bg-orange-500 text-black font-bold text-sm hover:bg-orange-400 transition-all disabled:opacity-50">
@@ -133,20 +150,22 @@ export default function UserDashboard() {
                             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                             className="group bg-[#0A0A0A] border border-[#1a1a1a] hover:border-orange-500/30 rounded-2xl p-6 flex flex-col gap-4 transition-all relative overflow-hidden cursor-pointer"
                             onClick={() => window.location.href = `/device/${device.deviceId}`}>
-                            {/* glow */}
                             <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 blur-[60px] pointer-events-none group-hover:bg-orange-500/10 transition-all"></div>
 
-                            {/* Header */}
                             <div className="flex items-start justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/10 border border-green-500/30' : 'bg-[#111] border border-[#222]'}`}>
-                                        {device.isConnected
-                                            ? <Wifi className="w-5 h-5 text-green-500" />
-                                            : <WifiOff className="w-5 h-5 text-[#333]" />}
+                                        {device.mode === 'serial'
+                                            ? <Bluetooth className="w-5 h-5 text-blue-400" />
+                                            : device.isConnected ? <Wifi className="w-5 h-5 text-green-500" /> : <WifiOff className="w-5 h-5 text-[#333]" />}
                                     </div>
                                     <div>
                                         <h3 className="text-white font-bold font-mono text-sm">{device.name}</h3>
-                                        <p className="text-[#444] text-xs font-mono">{device.deviceId}</p>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase ${device.mode === 'serial' ? 'text-blue-400/70 border-blue-400/20' : 'text-orange-500/70 border-orange-500/20'}`}>
+                                                {device.mode === 'serial' ? 'BT/Serial' : 'WiFi'}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                                 <button onClick={e => { e.stopPropagation(); setDeleteConfirm(device.deviceId); }}
@@ -155,7 +174,6 @@ export default function UserDashboard() {
                                 </button>
                             </div>
 
-                            {/* Status */}
                             <div className="flex items-center gap-2">
                                 <span className={`w-2 h-2 rounded-full ${device.isConnected ? 'bg-green-500 animate-pulse shadow-[0_0_6px_#22c55e]' : 'bg-[#333]'}`}></span>
                                 <span className={`text-xs font-mono uppercase tracking-widest ${device.isConnected ? 'text-green-500' : 'text-[#444]'}`}>
@@ -164,7 +182,6 @@ export default function UserDashboard() {
                                 <span className="ml-auto text-[#333] text-xs font-mono">{device.pins?.length || 0} pins</span>
                             </div>
 
-                            {/* Quick widget preview */}
                             {device.pins?.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5">
                                     {device.pins.slice(0, 4).map(pin => (
@@ -180,7 +197,6 @@ export default function UserDashboard() {
                                 </div>
                             )}
 
-                            {/* Footer */}
                             <div className="flex items-center justify-between pt-2 border-t border-[#111]">
                                 <span className="text-[#444] text-xs font-mono flex items-center gap-1">
                                     <Zap className="w-3 h-3" /> {device.pins?.filter(p => p.mode === 'OUTPUT').length || 0} outputs

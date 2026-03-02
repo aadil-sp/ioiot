@@ -8,7 +8,8 @@ const pinSchema = new mongoose.Schema({
     type: { type: String, enum: ['digital', 'pwm', 'analog_input'], default: 'digital' },
     widgetType: { type: String, enum: ['toggle', 'slider', 'button', 'value_display'], default: 'toggle' },
     widgetKey: { type: String, required: true },
-    value: { type: mongoose.Schema.Types.Mixed, default: false }, // bool for digital, 0-255 for pwm
+    commandChar: { type: String, default: '' }, // Single char the ESP listens for e.g. 'G'
+    value: { type: mongoose.Schema.Types.Mixed, default: false },
     min: { type: Number, default: 0 },
     max: { type: Number, default: 255 },
     color: { type: String, default: '#f97316' },
@@ -22,8 +23,13 @@ const deviceSchema = new mongoose.Schema({
         default: () => crypto.randomBytes(16).toString('hex'),
         unique: true
     },
+    // Device mode: 'wifi' = polls server, 'serial' = receives chars via Bluetooth/Serial
+    mode: { type: String, enum: ['wifi', 'serial'], default: 'wifi' },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     pins: [pinSchema],
+    // WiFi credentials stored per-device for code generation
+    wifiSSID: { type: String, default: '' },
+    wifiPassword: { type: String, default: '' },
     // Legacy fields kept for backward compatibility
     state: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
     controls: { type: Array, default: [] },
