@@ -97,7 +97,7 @@ export default function AdminDashboard() {
 
                 {/* Console / Map / Remote Array */}
                 <div className="xl:col-span-8">
-                    <DeviceControl deviceId="device-001" isAdmin={true} />
+                    <DeviceControl deviceId="device-001" isAdmin={true} deviceName="RC PLANE DEMO" />
                 </div>
             </div>
         </div>

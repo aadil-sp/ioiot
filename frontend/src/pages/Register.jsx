@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function Register() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [msg, setMsg] = useState('');
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
     const handleRegister = async (e) => {
         e.preventDefault();
+        const trimmedUsername = username.trim();
         try {
-            const res = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/auth/register`, { username, password });
+            const res = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/auth/register`, { username: trimmedUsername, password });
             setMsg(res.data.message);
             setError('');
             setTimeout(() => navigate('/login'), 2500);
@@ -54,13 +56,22 @@ export default function Register() {
                     </div>
                     <div className="space-y-1">
                         <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Passphrase</label>
-                        <input
-                            type="password"
-                            className="w-full bg-[#111] border-b-2 border-[#333] p-3 text-white focus:outline-none focus:border-orange-500 transition-colors font-mono tracking-widest"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                        />
+                        <div className="relative">
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                className="w-full bg-[#111] border-b-2 border-[#333] p-3 text-white focus:outline-none focus:border-orange-500 transition-colors font-mono tracking-widest"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
+                            <button
+                                type="button"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] hover:text-orange-500 transition-colors"
+                                onClick={() => setShowPassword(!showPassword)}
+                            >
+                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                        </div>
                     </div>
                     <button className="w-full bg-orange-600 hover:bg-orange-500 text-black font-bold uppercase tracking-widest py-4 mt-8 transition-all hover:shadow-[0_0_25px_#f97316b3] group relative overflow-hidden">
                         <span className="relative z-10">Establish</span>

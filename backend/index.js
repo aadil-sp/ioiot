@@ -52,7 +52,8 @@ mongoose.connect(MONGO_URI).then(async () => {
 // Auth Routes
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        let { username, password } = req.body;
+        username = username?.trim();
         const exists = await User.findOne({ username });
         if (exists) return res.status(400).json({ error: 'Username already exists' });
 
@@ -67,7 +68,8 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        let { username, password } = req.body;
+        username = username?.trim();
         const user = await User.findOne({ username });
 
         if (!user || !(await bcrypt.compare(password, user.password))) {

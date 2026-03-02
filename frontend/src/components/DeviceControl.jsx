@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 
 const socket = io(import.meta.env.VITE_API_URL || '');
 
-export default function DeviceControl({ deviceId, isAdmin }) {
+export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
     const [device, setDevice] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -100,7 +100,7 @@ export default function DeviceControl({ deviceId, isAdmin }) {
                         {device.isConnected && <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-[#0A0A0A]"></div>}
                     </div>
                     <div>
-                        <h3 className="text-2xl font-black font-mono tracking-widest text-white uppercase">{device.deviceId}</h3>
+                        <h3 className="text-2xl font-black font-mono tracking-widest text-white uppercase">{deviceName || device.deviceId}</h3>
                         <div className="flex items-center gap-2 mt-2 font-mono text-xs uppercase tracking-widest text-[#777]">
                             <span>Hardware Link:</span>
                             {device.isConnected
