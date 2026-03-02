@@ -97,6 +97,22 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// ─── Change Password ──────────────────────────────────────────────────────────
+app.post('/api/auth/change-password', authenticate, async (req, res) => {
+    try {
+        const { oldPassword, newPassword } = req.body;
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        const match = await bcrypt.compare(oldPassword, user.password);
+        if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
+        user.password = await bcrypt.hash(newPassword, 10);
+        await user.save();
+        res.json({ message: 'Password changed successfully' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to change password' });
+    }
+});
+
 // ─── Admin Routes ─────────────────────────────────────────────────────────────
 app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
     const users = await User.find({}, '-password');

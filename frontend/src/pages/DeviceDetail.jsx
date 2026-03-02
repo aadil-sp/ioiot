@@ -5,7 +5,8 @@ import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Wifi, WifiOff, Settings, Plus, Trash2, Save,
-    Zap, Copy, Check, Code2, Sliders, RefreshCw, Eye, EyeOff, Bluetooth, ChevronDown
+    Zap, Copy, Check, Code2, Sliders, RefreshCw, Eye, EyeOff, Bluetooth, ChevronDown,
+    MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle
 } from 'lucide-react';
 import { ThemeContext } from '../App';
 
@@ -100,6 +101,14 @@ export default function DeviceDetail() {
     const [showWifiPass, setShowWifiPass] = useState(false);
     const [savingWifi, setSavingWifi] = useState(false);
     const [showPresets, setShowPresets] = useState(false);
+    // ── Serial Monitor (Beta / Web Serial API) ──
+    const [serialPort, setSerialPort] = useState(null);
+    const [serialLog, setSerialLog] = useState([]);
+    const [serialConnected, setSerialConnected] = useState(false);
+    const [serialInput, setSerialInput] = useState('');
+    const [baudRate, setBaudRate] = useState(115200);
+    const [serialReader, setSerialReader] = useState(null);
+    const betaMode = localStorage.getItem('betaMode') === 'true';
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
 
     // Theme classes
@@ -431,6 +440,88 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const downloadCode = () => {
+        const code = generateCode();
+        const name = device?.name?.replace(/\s+/g, '_') || 'ioiot_device';
+        const blob = new Blob([code], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${name}.ino`;
+        a.click(); URL.revokeObjectURL(url);
+    };
+
+    // ── OS Detection ────────────────────────────────────────────
+    const getOS = () => {
+        const ua = navigator.userAgent;
+        if (/Android/i.test(ua)) return 'android';
+        if (/iPad|iPhone|iPod/.test(ua)) return 'ios';
+        if (/Win/i.test(ua)) return 'windows';
+        if (/Mac/i.test(ua)) return 'mac';
+        if (/Linux/i.test(ua)) return 'linux';
+        return 'unknown';
+    };
+    const os = getOS();
+    const supportsWebSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
+
+    // ── Web Serial ───────────────────────────────────────────────
+    const connectSerial = async () => {
+        if (!supportsWebSerial) {
+            alert('Web Serial is not supported. Please use Chrome or Edge on desktop.');
+            return;
+        }
+        try {
+            const port = await navigator.serial.requestPort();
+            await port.open({ baudRate: Number(baudRate) });
+            setSerialPort(port);
+            setSerialConnected(true);
+            setSerialLog([{ type: 'sys', text: `✓ Connected at ${baudRate} baud`, time: new Date().toLocaleTimeString() }]);
+            // Read loop
+            const reader = port.readable.getReader();
+            setSerialReader(reader);
+            const decoder = new TextDecoder();
+            let buffer = '';
+            const read = async () => {
+                try {
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        lines.forEach(line => {
+                            if (line.trim()) {
+                                setSerialLog(prev => [...prev.slice(-200), { type: 'rx', text: line.trim(), time: new Date().toLocaleTimeString() }]);
+                            }
+                        });
+                    }
+                } catch { }
+            };
+            read();
+        } catch (err) {
+            if (err.name !== 'NotFoundError') console.error(err);
+        }
+    };
+
+    const disconnectSerial = async () => {
+        try {
+            if (serialReader) { await serialReader.cancel(); }
+            if (serialPort) { await serialPort.close(); }
+        } catch { }
+        setSerialPort(null); setSerialReader(null); setSerialConnected(false);
+        setSerialLog(prev => [...prev, { type: 'sys', text: '× Disconnected', time: new Date().toLocaleTimeString() }]);
+    };
+
+    const sendSerial = async () => {
+        if (!serialPort || !serialInput.trim()) return;
+        try {
+            const writer = serialPort.writable.getWriter();
+            await writer.write(new TextEncoder().encode(serialInput + '\n'));
+            writer.releaseLock();
+            setSerialLog(prev => [...prev, { type: 'tx', text: serialInput, time: new Date().toLocaleTimeString() }]);
+            setSerialInput('');
+        } catch (err) { console.error(err); }
+    };
+
     if (loading) return (
         <div className="flex items-center justify-center h-96">
             <div className="w-12 h-12 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
@@ -526,15 +617,22 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
             </AnimatePresence>
 
             {/* Tabs */}
-            <div className={`flex gap-1 p-1 border rounded-xl mb-6 ${card}`}>
+            <div className={`flex gap-1 p-1 border rounded-xl mb-6 overflow-x-auto ${card}`}>
                 {[
                     { key: 'control', icon: <Sliders className="w-4 h-4" />, label: 'Control' },
                     { key: 'config', icon: <Settings className="w-4 h-4" />, label: 'Pin Config' },
                     { key: 'code', icon: <Code2 className="w-4 h-4" />, label: 'ESP32 Code' },
+                    { key: 'flash', icon: <MonitorPlay className="w-4 h-4" />, label: betaMode ? 'Flash & Monitor' : 'Flash Guide', beta: true },
                 ].map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-mono font-bold text-sm transition-all ${tab === t.key ? 'bg-orange-500 text-black' : dark ? 'text-[#555] hover:text-white' : 'text-gray-400 hover:text-gray-900'}`}>
-                        {t.icon} {t.label}
+                        className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg font-mono font-bold text-xs sm:text-sm transition-all ${tab === t.key
+                                ? (t.beta && betaMode ? 'bg-purple-500 text-white' : 'bg-orange-500 text-black')
+                                : dark ? 'text-[#555] hover:text-white' : 'text-gray-400 hover:text-gray-900'
+                            }`}>
+                        {t.icon}
+                        <span className="hidden sm:inline">{t.label}</span>
+                        <span className="sm:hidden">{t.label.split(' ')[0]}</span>
+                        {t.beta && betaMode && <span className="text-[9px] bg-purple-400/20 px-1 rounded hidden sm:inline">BETA</span>}
                     </button>
                 ))}
             </div>
@@ -667,6 +765,137 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                                 ? '📱 Upload → Open Bluetooth Terminal on your phone → Connect to device → Send command characters to control components.'
                                 : '📡 Fill in WiFi credentials above → Upload to ESP32 → It will poll your dashboard every 500ms and apply commands instantly.'}
                         </p>
+                    </motion.div>
+                )}
+
+                {/* ── FLASH & MONITOR TAB ──────────────────────────────── */}
+                {tab === 'flash' && (
+                    <motion.div key="flash" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+
+                        {/* Platform Banner */}
+                        <div className={`p-4 border rounded-xl flex flex-col sm:flex-row sm:items-center gap-3 justify-between ${card}`}>
+                            <div className="flex items-center gap-3">
+                                <span className="text-2xl">{os === 'windows' ? '🪟' : os === 'mac' ? '🍎' : os === 'linux' ? '🐧' : os === 'android' ? '🤖' : os === 'ios' ? '📱' : '💻'}</span>
+                                <div>
+                                    <p className={`font-mono text-sm font-bold ${dark ? 'text-white' : 'text-gray-900'}`}>
+                                        {os === 'android' ? 'Android Detected' : os === 'ios' ? 'iPhone / iPad Detected' : `${os.charAt(0).toUpperCase() + os.slice(1)} Detected`}
+                                    </p>
+                                    <p className={`font-mono text-xs ${mutedText}`}>
+                                        {os === 'ios' || os === 'android' ? 'Mobile: Use Arduino Web Editor or OTA update for mobile uploads' : 'Desktop: Arduino IDE or Web Serial (Chrome/Edge) supported'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={downloadCode}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 text-black font-bold text-sm hover:bg-orange-400 transition-all shrink-0">
+                                <Download className="w-4 h-4" /> Download .ino
+                            </button>
+                        </div>
+
+                        {/* Flash Steps */}
+                        <div className={`p-5 border rounded-xl ${card}`}>
+                            <h3 className={`font-mono font-bold text-sm uppercase tracking-widest mb-4 ${dark ? 'text-white' : 'text-gray-900'}`}>
+                                📋 How to Flash Your ESP32
+                            </h3>
+                            <div className="space-y-3">
+                                {[
+                                    { step: '1', title: 'Download the Code', desc: 'Click "Download .ino" above to save the generated Arduino code file.' },
+                                    { step: '2', title: 'Install Arduino IDE', desc: os === 'windows' ? 'Download Arduino IDE from arduino.cc/en/software — Windows installer available.' : os === 'mac' ? 'Download Arduino IDE from arduino.cc/en/software or install via Homebrew: brew install --cask arduino.' : 'sudo apt install arduino OR download from arduino.cc/en/software.' },
+                                    { step: '3', title: 'Add ESP32 Board', desc: 'In Arduino IDE: File → Preferences → Add "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json" to Board Manager URLs. Then Tools → Board → Board Manager → Search "esp32" → Install.' },
+                                    { step: '4', title: 'Install Libraries', desc: `Tools → Manage Libraries → Search and install: ArduinoJson${device?.pins.some(p => p.type === 'servo') ? ', ESP32Servo' : ''}.` },
+                                    { step: '5', title: 'Select Board & Port', desc: 'Tools → Board → ESP32 Arduino → Select your board (ESP32 Dev Module). Tools → Port → Select your COM/USB port.' },
+                                    { step: '6', title: 'Upload!', desc: 'Click the Upload button (→). Hold the BOOT button on your ESP32 during upload if needed.' },
+                                ].map(({ step, title, desc }) => (
+                                    <div key={step} className="flex gap-3">
+                                        <div className="w-7 h-7 rounded-lg bg-orange-500 text-black font-black font-mono text-sm flex items-center justify-center shrink-0">{step}</div>
+                                        <div>
+                                            <p className={`font-mono text-sm font-bold ${dark ? 'text-white' : 'text-gray-800'}`}>{title}</p>
+                                            <p className={`font-mono text-xs mt-0.5 leading-relaxed ${mutedText}`}>{desc}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Web Serial Monitor (Beta) */}
+                        {betaMode ? (
+                            <div className={`p-5 border border-purple-500/30 rounded-xl bg-purple-500/5`}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <Terminal className="w-4 h-4 text-purple-400" />
+                                        <h3 className="font-mono font-bold text-sm uppercase tracking-widest text-purple-400">Web Serial Monitor</h3>
+                                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-400/20 text-purple-300">BETA</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <select value={baudRate} onChange={e => setBaudRate(e.target.value)}
+                                            disabled={serialConnected}
+                                            className={`text-xs font-mono border rounded-lg px-2 py-1 outline-none ${dark ? 'bg-black border-[#333] text-white' : 'bg-white border-gray-300 text-gray-800'}`}>
+                                            {[9600, 19200, 38400, 57600, 115200, 230400].map(b => <option key={b} value={b}>{b}</option>)}
+                                        </select>
+                                        {serialConnected ? (
+                                            <button onClick={disconnectSerial}
+                                                className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-mono font-bold hover:bg-red-500 hover:text-white transition-all">
+                                                Disconnect
+                                            </button>
+                                        ) : (
+                                            <button onClick={connectSerial}
+                                                disabled={!supportsWebSerial}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-400 text-xs font-mono font-bold hover:bg-purple-500 hover:text-white transition-all disabled:opacity-40">
+                                                <Usb className="w-3 h-3" /> Connect USB
+                                            </button>
+                                        )}
+                                        <button onClick={() => setSerialLog([])} className="p-1.5 rounded-lg text-red-400/40 hover:text-red-400 transition-all">
+                                            <Trash className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!supportsWebSerial && (
+                                    <div className="flex items-center gap-2 mb-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                                        <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />
+                                        <p className="text-yellow-400 font-mono text-xs">Web Serial requires Chrome or Edge on Desktop. Not supported on mobile or Safari.</p>
+                                    </div>
+                                )}
+
+                                {/* Log Output */}
+                                <div className={`h-52 sm:h-72 overflow-y-auto rounded-xl p-3 font-mono text-xs border ${dark ? 'bg-black border-[#1a1a1a]' : 'bg-gray-900 border-gray-700'}`}>
+                                    {serialLog.length === 0 ? (
+                                        <p className="text-[#333] text-center mt-8">Connect your ESP32 and click "Connect USB" to start monitoring...</p>
+                                    ) : (
+                                        serialLog.map((entry, i) => (
+                                            <div key={i} className="flex gap-2 mb-0.5">
+                                                <span className="text-[#444] shrink-0">{entry.time}</span>
+                                                <span className={entry.type === 'sys' ? 'text-yellow-500' : entry.type === 'tx' ? 'text-orange-400' : 'text-green-400'}>
+                                                    {entry.type === 'tx' ? '→ ' : entry.type === 'sys' ? '● ' : ''}{entry.text}
+                                                </span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                {/* Send Input */}
+                                <div className="flex gap-2 mt-3">
+                                    <input
+                                        value={serialInput}
+                                        onChange={e => setSerialInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && sendSerial()}
+                                        placeholder={serialConnected ? 'Type command and press Enter...' : 'Connect first...'}
+                                        disabled={!serialConnected}
+                                        className={`flex-1 border outline-none rounded-xl px-3 py-2 font-mono text-xs transition-colors ${dark ? 'bg-black border-[#333] text-white focus:border-purple-500 placeholder-[#444]' : 'bg-gray-50 border-gray-300 text-gray-900 focus:border-purple-400'} disabled:opacity-40`}
+                                    />
+                                    <button onClick={sendSerial} disabled={!serialConnected || !serialInput.trim()}
+                                        className="p-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500 hover:text-white transition-all disabled:opacity-40">
+                                        <Send className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className={`p-5 border border-dashed rounded-xl text-center ${dark ? 'border-[#222]' : 'border-gray-200'}`}>
+                                <Terminal className={`w-8 h-8 mx-auto mb-2 ${dark ? 'text-[#333]' : 'text-gray-300'}`} />
+                                <p className={`font-mono text-sm font-bold mb-1 ${dark ? 'text-[#444]' : 'text-gray-400'}`}>Web Serial Monitor</p>
+                                <p className={`font-mono text-xs ${mutedText}`}>Enable Beta Mode in your Profile to use the in-browser serial monitor and connect to your ESP32 directly over USB.</p>
+                                <a href="/profile" className="inline-block mt-3 text-orange-500 font-mono text-xs hover:underline">→ Go to Profile → Enable Beta Mode</a>
+                            </div>
+                        )}
                     </motion.div>
                 )}
             </AnimatePresence>
