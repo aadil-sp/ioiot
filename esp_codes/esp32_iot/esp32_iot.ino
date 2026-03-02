@@ -1,3 +1,4 @@
+#include "esp_wifi.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -16,9 +17,17 @@ const int LED_RED = 21;
 const int FLASH_PIN = 22;
 const int PROPELLER_PIN = 23;
 
+void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    Serial.print("Disconnect reason: ");
+    Serial.println(info.wifi_sta_disconnected.reason);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
-  delay(100); // Give serial a moment
+  delay(2000); // ⚖️ Wait for power stabilization
+  Serial.println("\n--- IoIoT System Booting (Lean Mode) ---");
 
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
@@ -26,52 +35,32 @@ void setup() {
   pinMode(FLASH_PIN, OUTPUT);
   pinMode(PROPELLER_PIN, OUTPUT);
 
-  // Scan for WiFi networks
+  WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-  delay(100);
+  WiFi.disconnect(true);
+  delay(500);
 
-  Serial.println("\n--- WiFi Scan Start ---");
-  int n = WiFi.scanNetworks();
-  if (n == 0) {
-    Serial.println("No networks found.");
-  } else {
-    Serial.print(n);
-    Serial.println(" networks found:");
-    for (int i = 0; i < n; ++i) {
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(WiFi.SSID(i));
-      Serial.print(" (");
-      Serial.print(WiFi.RSSI(i));
-      Serial.print(")");
-      Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " " : "*");
-      delay(10);
-    }
-  }
-  Serial.println("--- WiFi Scan Done ---\n");
-
-  // Connect to WiFi
+  // REDUCE POWER spike manually (Critical for Status 6/Reboots)
   WiFi.begin(ssid, password);
+  esp_wifi_set_max_tx_power(
+      34); // Reduce to low power (~8.5dBm) to prevent crash
+
   Serial.print("Connecting to WiFi: ");
   Serial.println(ssid);
 
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
     delay(500);
     Serial.print(".");
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nSUCCESS: Connected to WiFi!");
+    Serial.println("\nSUCCESS: Connection Established!");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println("\nFAILED: Connection timed out.");
-    Serial.print("Status Code: ");
-    Serial.println(
-        WiFi.status()); // WL_NO_SSID_AVAIL = 1, WL_CONNECT_FAILED = 4, etc.
+    Serial.println("\nFAILED: No connection.");
   }
 }
 
@@ -141,5 +130,5 @@ void loop() {
     Serial.println("WiFi Lost. Reconnecting...");
     WiFi.begin(ssid, password);
   }
-  delay(1000); // Poll every 1 second for better responsiveness
+  delay(500); // Poll every 500ms for ultra-responsiveness
 }

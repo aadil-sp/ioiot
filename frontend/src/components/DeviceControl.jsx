@@ -61,15 +61,26 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
 
     const toggleControl = async (toggleType) => {
         if (!device) return;
-        const newState = !device.state?.[toggleType];
+        const currentState = device.state?.[toggleType] || false;
+        const newState = !currentState;
+
+        // --- INSTANT OPTIMISTIC FEEDBACK ---
+        setDevice(prev => ({
+            ...prev,
+            state: { ...prev.state, [toggleType]: newState }
+        }));
 
         try {
             await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/devices/${deviceId}/toggle`,
                 { toggleType, state: newState },
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
-            // State will be updated by socket.io event 'deviceStateUpdate'
         } catch (err) {
-            console.error(err);
+            console.error('Toggle failed:', err);
+            // Revert on failure
+            setDevice(prev => ({
+                ...prev,
+                state: { ...prev.state, [toggleType]: currentState }
+            }));
         }
     };
 

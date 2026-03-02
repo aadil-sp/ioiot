@@ -151,13 +151,46 @@ app.post('/api/devices/:id/controls', authenticate, requireAdmin, async (req, re
 
 // ESP32 Simple Polling endpoint
 app.get('/api/esp/:id/state', async (req, res) => {
-    const device = await Device.findOne({ deviceId: req.params.id });
-    if (device) {
-        res.json(device.state);
-    } else {
-        res.status(404).json({ error: 'Device not found' });
+    try {
+        const device = await Device.findOne({ deviceId: req.params.id });
+        if (device) {
+            // Update "Online" status on every poll
+            const now = new Date();
+            const wasOffline = !device.isConnected;
+
+            device.isConnected = true;
+            device.lastSeen = now;
+            await device.save();
+
+            // Notify frontend if status changed
+            if (wasOffline) {
+                io.emit('deviceStatusUpdate', { deviceId: device.deviceId, isConnected: true });
+            }
+
+            res.json(device.state);
+        } else {
+            res.status(404).json({ error: 'Device not found' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
     }
 });
+
+// Periodic check to mark devices offline (every 10 seconds)
+setInterval(async () => {
+    const timeout = new Date(Date.now() - 10000); // 10 seconds ago
+    const offlineDevices = await Device.find({
+        isConnected: true,
+        $or: [{ lastSeen: { $lt: timeout } }, { lastSeen: { $exists: false } }]
+    });
+
+    for (const dev of offlineDevices) {
+        dev.isConnected = false;
+        await dev.save();
+        io.emit('deviceStatusUpdate', { deviceId: dev.deviceId, isConnected: false });
+        console.log(`Device marked offline: ${dev.deviceId}`);
+    }
+}, 10000);
 
 io.on('connection', (socket) => {
     console.log('New client connected', socket.id);
