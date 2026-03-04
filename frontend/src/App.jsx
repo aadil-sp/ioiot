@@ -77,9 +77,9 @@ function AppShell({ auth, setAuth, dark, toggle }) {
       <header className={`px-4 sm:px-6 py-3 sm:py-4 border-b flex justify-between items-center sticky top-0 z-50 backdrop-blur-xl transition-colors duration-300 ${dark ? 'border-orange-500/20 bg-black/70' : 'border-orange-300/40 bg-white/90'}`}>
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 sm:gap-3">
-          <Cpu className="w-7 h-7 sm:w-8 sm:h-8 text-orange-500 drop-shadow-[0_0_10px_#f97316cc]" />
+          <img src="/logo.png" alt="ioIoT Logo" className="w-8 h-8 sm:w-10 sm:h-10 object-contain drop-shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
           <h1 className="text-xl sm:text-2xl font-black tracking-wider uppercase bg-gradient-to-r from-orange-400 to-red-600 bg-clip-text text-transparent">
-            IoIoT
+            ioIoT
           </h1>
           <span className={`hidden sm:inline text-[10px] font-mono tracking-widest border px-2 py-0.5 rounded ${dark ? 'text-orange-500/60 border-orange-500/20' : 'text-orange-600 border-orange-400/30'}`}>v2.0</span>
         </Link>

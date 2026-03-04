@@ -41,8 +41,8 @@ export default function Login({ setAuth }) {
                     <div className="w-20 h-20 bg-orange-950/40 rounded-2xl flex items-center justify-center mb-6 border border-orange-500/50 shadow-[0_0_20px_#f9731666]">
                         <Fingerprint className="w-10 h-10 text-orange-500" strokeWidth={1.5} />
                     </div>
-                    <h2 className="text-3xl font-bold tracking-widest uppercase text-white">ACCESS</h2>
-                    <p className="text-orange-500/70 text-sm mt-2 tracking-widest uppercase">Identify to Node</p>
+                    <h2 className="text-3xl font-bold tracking-widest uppercase text-white">LOG IN</h2>
+                    <p className="text-orange-500/70 text-sm mt-2 tracking-widest uppercase">Sign in to your account</p>
                 </div>
 
                 {error && (
@@ -53,7 +53,7 @@ export default function Login({ setAuth }) {
 
                 <form onSubmit={handleLogin} className="space-y-6">
                     <div className="space-y-1">
-                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">User ID</label>
+                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Username</label>
                         <input
                             type="text"
                             className="w-full bg-[#111] border-b-2 border-[#333] p-3 text-white focus:outline-none focus:border-orange-500 transition-colors font-mono tracking-wider"
@@ -63,7 +63,7 @@ export default function Login({ setAuth }) {
                         />
                     </div>
                     <div className="space-y-1">
-                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Passphrase</label>
+                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Password</label>
                         <div className="relative">
                             <input
                                 type={showPassword ? "text" : "password"}
@@ -82,13 +82,13 @@ export default function Login({ setAuth }) {
                         </div>
                     </div>
                     <button className="w-full bg-orange-600 hover:bg-orange-500 text-black font-bold uppercase tracking-widest py-4 mt-8 transition-all hover:shadow-[0_0_25px_#f97316b3] group relative overflow-hidden">
-                        <span className="relative z-10">Initiate Uplink</span>
+                        <span className="relative z-10">Sign In</span>
                         <div className="absolute inset-0 bg-white/20 translate-y-[100%] group-hover:translate-y-[0%] transition-transform duration-300 pointer-events-none"></div>
                     </button>
                 </form>
                 <div className="mt-8 text-center">
                     <Link to="/register" className="text-xs text-[#666] uppercase tracking-widest hover:text-orange-400 transition-colors">
-                        [ Request Clearance ]
+                        [ Create An Account ]
                     </Link>
                 </div>
             </motion.div>

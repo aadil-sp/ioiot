@@ -25,13 +25,13 @@ export default function Landing() {
             <main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 z-10 py-20 text-center">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="max-w-4xl mx-auto">
                     <div className="flex items-center justify-center gap-3 mb-6">
-                        <Cpu className="w-12 h-12 sm:w-16 sm:h-16 text-orange-500 drop-shadow-[0_0_15px_#f97316cc]" />
+                        <img src="/logo.png" alt="ioIoT Logo" className="w-16 h-16 sm:w-20 sm:h-20 object-contain drop-shadow-[0_0_20px_rgba(249,115,22,0.5)]" />
                     </div>
 
                     <h1 className="text-5xl sm:text-7xl font-black tracking-tight mb-6">
                         The Ultimate <br className="sm:hidden" />
-                        <span className="bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 bg-clip-text text-transparent">
-                            IoT Platform
+                        <span className="bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 bg-clip-text text-transparent uppercase">
+                            ioIoT Platform
                         </span>
                     </h1>
 

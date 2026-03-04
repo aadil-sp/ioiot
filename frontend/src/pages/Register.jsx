@@ -36,8 +36,8 @@ export default function Register() {
                     <div className="w-20 h-20 bg-orange-950/40 rounded-2xl flex items-center justify-center mb-6 border border-orange-500/50 shadow-[0_0_20px_#f9731666]">
                         <UserPlus className="w-10 h-10 text-orange-500" strokeWidth={1.5} />
                     </div>
-                    <h2 className="text-3xl font-bold tracking-widest uppercase text-white">ENROLL</h2>
-                    <p className="text-orange-500/70 text-sm mt-2 tracking-widest uppercase">Secure Identity</p>
+                    <h2 className="text-3xl font-bold tracking-widest uppercase text-white">JOIN US</h2>
+                    <p className="text-orange-500/70 text-sm mt-2 tracking-widest uppercase">Start your IoT journey</p>
                 </div>
 
                 {msg && <div className="bg-orange-950/50 border-l-4 border-orange-400 text-orange-300 p-3 mb-6 text-sm text-center">{msg}</div>}
@@ -45,7 +45,7 @@ export default function Register() {
 
                 <form onSubmit={handleRegister} className="space-y-6">
                     <div className="space-y-1">
-                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Desired ID</label>
+                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Username</label>
                         <input
                             type="text"
                             className="w-full bg-[#111] border-b-2 border-[#333] p-3 text-white focus:outline-none focus:border-orange-500 transition-colors font-mono tracking-wider"
@@ -55,7 +55,7 @@ export default function Register() {
                         />
                     </div>
                     <div className="space-y-1">
-                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Passphrase</label>
+                        <label className="text-xs uppercase tracking-widest text-[#555] font-semibold">Password</label>
                         <div className="relative">
                             <input
                                 type={showPassword ? "text" : "password"}
@@ -74,13 +74,13 @@ export default function Register() {
                         </div>
                     </div>
                     <button className="w-full bg-orange-600 hover:bg-orange-500 text-black font-bold uppercase tracking-widest py-4 mt-8 transition-all hover:shadow-[0_0_25px_#f97316b3] group relative overflow-hidden">
-                        <span className="relative z-10">Establish</span>
+                        <span className="relative z-10">Create Account</span>
                         <div className="absolute inset-0 bg-white/20 translate-y-[100%] group-hover:translate-y-[0%] transition-transform duration-300 pointer-events-none"></div>
                     </button>
                 </form>
                 <div className="mt-8 text-center">
                     <Link to="/login" className="text-xs text-[#666] uppercase tracking-widest hover:text-orange-400 transition-colors">
-                        [ Return to Access ]
+                        [ Already have an account? Log In ]
                     </Link>
                 </div>
             </motion.div>
