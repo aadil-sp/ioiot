@@ -33,8 +33,8 @@ export default function Register() {
                 className="w-full max-w-sm p-8 sm:p-10 bg-[#0A0A0A] rounded-3xl border border-orange-500/30 shadow-[0_0_50px_-15px_#f973164d] hover:shadow-[0_0_50px_-10px_#f9731680] transition-shadow duration-500"
             >
                 <div className="flex flex-col items-center mb-8">
-                    <div className="w-20 h-20 bg-orange-950/40 rounded-2xl flex items-center justify-center mb-6 border border-orange-500/50 shadow-[0_0_20px_#f9731666]">
-                        <UserPlus className="w-10 h-10 text-orange-500" strokeWidth={1.5} />
+                    <div className="w-20 h-20 mb-6 drop-shadow-[0_0_15px_rgba(249,115,22,0.5)]">
+                        <img src="/logo.png" alt="ioIoT Logo" className="w-full h-full object-contain" />
                     </div>
                     <h2 className="text-3xl font-bold tracking-widest uppercase text-white">JOIN US</h2>
                     <p className="text-orange-500/70 text-sm mt-2 tracking-widest uppercase">Start your IoT journey</p>
