@@ -123,12 +123,7 @@ app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
     res.json(users);
 });
 
-app.post('/api/admin/users/:id/approve', authenticate, requireAdmin, async (req, res) => {
-    await User.findByIdAndUpdate(req.params.id, { isApproved: true });
-    res.json({ message: 'User approved' });
-});
-
-// Admin create user directly
+// Admin create user directly — MUST be before /:id routes or Express matches "create" as :id
 app.post('/api/admin/users/create', authenticate, requireAdmin, async (req, res) => {
     try {
         let { username, password, role } = req.body;
@@ -156,10 +151,16 @@ app.post('/api/admin/notify', authenticate, requireAdmin, async (req, res) => {
     }
 });
 
+app.post('/api/admin/users/:id/approve', authenticate, requireAdmin, async (req, res) => {
+    await User.findByIdAndUpdate(req.params.id, { isApproved: true });
+    res.json({ message: 'User approved' });
+});
+
 app.delete('/api/admin/users/:id', authenticate, requireAdmin, async (req, res) => {
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User deleted' });
 });
+
 
 // Admin can see ALL devices across all users
 app.get('/api/admin/devices', authenticate, requireAdmin, async (req, res) => {
