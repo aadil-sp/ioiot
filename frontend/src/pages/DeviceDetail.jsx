@@ -521,6 +521,37 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
     const os = getOS();
     const supportsWebSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
 
+    // ── Cloud Compile + Flash state ──────────────────────────────────────────
+    const [selectedBoard, setSelectedBoard] = useState('esp32:esp32:esp32');
+    const [compiling, setCompiling] = useState(false);
+    const [compileLogs, setCompileLogs] = useState([]);
+    const [compiledFiles, setCompiledFiles] = useState(null);
+    const [flashing, setFlashing] = useState(false);
+    const [flashProgress, setFlashProgress] = useState(0);
+    const [flashDone, setFlashDone] = useState(false);
+    const compileLogRef = useRef(null);
+
+    // Set board from device when loaded
+    useEffect(() => {
+        if (device?.board) setSelectedBoard(BOARD_FQBN[device.board] || 'esp32:esp32:esp32');
+    }, [device?.board]);
+
+    // Auto-scroll compile log
+    useEffect(() => {
+        if (compileLogRef.current) compileLogRef.current.scrollTop = compileLogRef.current.scrollHeight;
+    }, [compileLogs]);
+
+    const BOARDS = [
+        { fqbn: 'esp32:esp32:esp32', label: '🔷 ESP32 Dev Module' },
+        { fqbn: 'esp32:esp32:esp32s2', label: '🔷 ESP32-S2' },
+        { fqbn: 'esp32:esp32:esp32s3', label: '🔷 ESP32-S3' },
+        { fqbn: 'esp32:esp32:esp32c3', label: '🔷 ESP32-C3' },
+        { fqbn: 'esp8266:esp8266:nodemcuv2', label: '🔵 ESP8266 NodeMCU v2' },
+        { fqbn: 'esp8266:esp8266:d1_mini', label: '🔵 ESP8266 Wemos D1 Mini' },
+        { fqbn: 'arduino:avr:uno', label: '🟦 Arduino Uno' },
+        { fqbn: 'arduino:avr:nano', label: '🟩 Arduino Nano' },
+        { fqbn: 'arduino:avr:mega', label: '🟪 Arduino Mega' },
+    ];
 
     const compileCode = async () => {
         setCompiling(true);
@@ -1035,10 +1066,10 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                         {/* Flash Steps */}
                         <div className={`p-5 border rounded-xl ${card}`}>
                             <h3 className={`font-mono font-bold text-sm uppercase tracking-widest mb-4 ${dark ? 'text-white' : 'text-gray-900'}`}>
-                                📋 How to Flash Your ESP32
+                                📋 How to Flash Your {boardLabel || 'Device'}
                             </h3>
                             <div className="space-y-3">
-                                {isUSB ? [
+                                {(isUSB ? [
                                     { step: '1', title: 'Download the Code', desc: 'Click "Download .ino" to save your Arduino sketch.' },
                                     { step: '2', title: 'Install Arduino IDE', desc: 'Get Arduino IDE from arduino.cc/en/software for your OS.' },
                                     { step: '3', title: 'Install ArduinoJson Library', desc: 'Tools → Manage Libraries → Search "ArduinoJson" → Install. Required for JSON USB commands.' },
@@ -1051,7 +1082,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                                     { step: '4', title: 'Install Libraries', desc: `Tools → Manage Libraries → Search and install: ArduinoJson${device?.pins.some(p => p.type === 'servo') ? (isESP8266 || isUSB ? ', Servo' : ', ESP32Servo') : ''}.` },
                                     { step: '5', title: 'Select Board & Port', desc: `Tools → Board → ${boardLabel || 'ESP32 Dev Module'}. Tools → Port → your COM/USB port.` },
                                     { step: '6', title: 'Upload!', desc: 'Click the Upload button (→). Hold the BOOT button on your ESP32 during upload if needed.' },
-                                ].map(({ step, title, desc }) => (
+                                ]).map(({ step, title, desc }) => (
                                     <div key={step} className="flex gap-3">
                                         <div className="w-7 h-7 rounded-lg bg-orange-500 text-black font-black font-mono text-sm flex items-center justify-center shrink-0">{step}</div>
                                         <div>
@@ -1142,11 +1173,13 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                                 <p className={`font-mono text-xs ${mutedText}`}>Enable Beta Mode in your Profile to use the in-browser serial monitor and connect to your ESP32 directly over USB.</p>
                                 <a href="/profile" className="inline-block mt-3 text-orange-500 font-mono text-xs hover:underline">→ Go to Profile → Enable Beta Mode</a>
                             </div>
-                        )}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+                        )
+                        }
+                    </motion.div >
+                )
+                }
+            </AnimatePresence >
+        </div >
     );
 }
 
