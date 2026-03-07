@@ -189,12 +189,13 @@ app.get('/api/devices', authenticate, async (req, res) => {
 // Create device
 app.post('/api/devices', authenticate, async (req, res) => {
     try {
-        const { name, mode } = req.body;
+        const { name, mode, board } = req.body;
         const deviceId = `device-${crypto.randomBytes(4).toString('hex')}`;
         const device = await Device.create({
             deviceId,
             name: name || 'My New Device',
             mode: mode || 'wifi',
+            board: board || 'esp32',
             owner: req.user.id,
             pins: [],
             state: {}
