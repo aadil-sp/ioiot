@@ -79,7 +79,7 @@ function AppShell({ auth, setAuth, dark, toggle }) {
         <Link to="/" className="flex items-center gap-2 sm:gap-3">
           <img src="/logo.png" alt="ioIoT Logo" className="w-8 h-8 sm:w-10 sm:h-10 object-contain drop-shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
           <h1 className="text-xl sm:text-2xl font-black tracking-wider uppercase bg-gradient-to-r from-orange-400 to-red-600 bg-clip-text text-transparent">
-            ioIoT
+            ioiot
           </h1>
           <span className={`hidden sm:inline text-[10px] font-mono tracking-widest border px-2 py-0.5 rounded ${dark ? 'text-orange-500/60 border-orange-500/20' : 'text-orange-600 border-orange-400/30'}`}>v2.0</span>
         </Link>
