@@ -187,27 +187,27 @@ export default function Profile() {
                     </div>
                 </motion.div>
 
-                {/* Beta Mode */}
+                {/* Beta / What's New */}
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-                    className={`rounded-2xl border p-6 ${betaMode ? 'border-purple-500/30 bg-purple-500/5' : card}`}>
-                    <div className="flex items-center gap-2 mb-3">
+                    className={`rounded-2xl border p-6 ${card}`}>
+                    <div className="flex items-center gap-2 mb-4">
                         <FlaskConical className="w-4 h-4 text-purple-400" />
-                        <h3 className="font-mono font-bold text-sm uppercase tracking-widest text-purple-400">Beta Mode</h3>
+                        <h3 className="font-mono font-bold text-sm uppercase tracking-widest text-purple-400">Beta Updates</h3>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-400/10 border border-purple-400/20 text-purple-400">Active</span>
                     </div>
-                    <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                            <p className={`font-mono text-sm font-bold ${dark ? 'text-white' : 'text-gray-800'}`}>Enable Experimental Features</p>
-                            <p className={`font-mono text-xs mt-1 leading-relaxed ${mutedText}`}>
-                                Unlocks: 🔌 Web Serial Monitor · ⚡ Direct USB Flash · 📟 Real-time ESP32 console · 🛜 OTA Updates
-                            </p>
-                            <p className="font-mono text-xs text-yellow-500/80 mt-2">
-                                ⚠ Beta features require Chrome or Edge on Desktop
+                    <div className={`p-4 rounded-xl border border-dashed ${dark ? 'border-[#222]' : 'border-gray-200'} flex items-center gap-3`}>
+                        <span className="text-2xl">🧪</span>
+                        <div>
+                            <p className={`font-mono text-sm font-bold ${dark ? 'text-white' : 'text-gray-800'}`}>No Beta Updates Currently</p>
+                            <p className={`font-mono text-xs mt-0.5 ${mutedText}`}>
+                                All features are stable. Cloud compile & flash, Web Serial Monitor and OTA are all enabled by default.
                             </p>
                         </div>
-                        <button onClick={() => setBetaMode(b => !b)}
-                            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 mt-1 ${betaMode ? 'bg-purple-500' : dark ? 'bg-[#222]' : 'bg-gray-300'}`}>
-                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${betaMode ? 'left-6' : 'left-0.5'}`} />
-                        </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {['☁️ Cloud Compile', '🔌 Web Serial Flash', '📟 ESP32 Console', '🛜 OTA Ready'].map(f => (
+                            <span key={f} className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300">{f}</span>
+                        ))}
                     </div>
                 </motion.div>
 

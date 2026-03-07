@@ -35,6 +35,7 @@ const deviceSchema = new mongoose.Schema({
     controls: { type: Array, default: [] },
     isConnected: { type: Boolean, default: false },
     lastSeen: { type: Date },
+    isLive: { type: Boolean, default: false }, // When true, visible to all users on UserDashboard
 }, { timestamps: true });
 
 module.exports = mongoose.model('Device', deviceSchema);

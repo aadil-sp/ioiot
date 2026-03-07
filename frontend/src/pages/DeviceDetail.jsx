@@ -109,7 +109,7 @@ export default function DeviceDetail() {
     const [serialInput, setSerialInput] = useState('');
     const [baudRate, setBaudRate] = useState(115200);
     const [serialReader, setSerialReader] = useState(null);
-    const betaMode = localStorage.getItem('betaMode') === 'true';
+    const betaMode = true; // Flash & Monitor is always enabled (beta gate removed)
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
 
     // Theme classes
@@ -136,7 +136,9 @@ export default function DeviceDetail() {
 
     useEffect(() => {
         fetchDevice();
-        const keepAlive = setInterval(() => axios.get(`${API}/api/ping`).catch(() => { }), 300000);
+        const heartbeat = setInterval(() => {
+            axios.get(`${import.meta.env.VITE_API_URL || ''}/api/ping`).catch(() => { });
+        }, 60000);
         socket.on('deviceStateUpdate', data => {
             if (data.deviceId === id) {
                 setDevice(prev => {
@@ -166,14 +168,20 @@ export default function DeviceDetail() {
         };
     }, [id]);
 
-    const sendControl = async (widgetKey, value) => {
+    const sendControl = (widgetKey, value) => {
+        // Optimistic UI state update
         setDevice(prev => {
             if (!prev) return prev;
             return { ...prev, pins: prev.pins.map(p => p.widgetKey === widgetKey ? { ...p, value } : p) };
         });
-        try {
-            await axios.post(`${API}/api/devices/${id}/control`, { widgetKey, value }, { headers });
-        } catch (err) { console.error(err); fetchDevice(); }
+
+        // Instant socket command (Blynk-style)
+        socket.emit('sendControl', {
+            deviceId: id,
+            widgetKey,
+            value,
+            token: localStorage.getItem('token')
+        });
     };
 
     const saveWifi = async () => {
@@ -352,8 +360,8 @@ ${commandCases || '      // Add output pins to generate cases here'}
         return `// ================================================================
 // ${device.name} — IoIoT WiFi Cloud Mode
 // ================================================================
-// This ESP32 polls your IoIoT dashboard every 500ms and applies
-// any control values you set from the web or mobile interface.
+// This ESP32 polls your IoIoT dashboard every 100ms for "Instant"
+// response times, just like the Blynk app.
 // ================================================================
 
 ${servoIncludes}#include <WiFi.h>
@@ -413,7 +421,7 @@ void loop() {
   HTTPClient http;
   http.begin(SERVER_URL);
   http.addHeader("x-auth-token", AUTH_TOKEN);
-  http.setTimeout(10000);
+  http.setTimeout(2000);
   int code = http.GET();
 
   if (code > 0) {
@@ -424,11 +432,11 @@ void loop() {
 ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
     }
   } else {
-    Serial.println("HTTP Error: " + String(code));
+    // Serial.println("HTTP Error: " + String(code));
   }
   http.end();
 
-  delay(500); // Poll every 500ms
+  delay(100); // Poll every 100ms for sub-200ms reactive time
 }`;
     };
 
@@ -913,7 +921,7 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                         <p className={`mt-4 font-mono text-xs leading-relaxed ${mutedText}`}>
                             {isSerial
                                 ? '📱 Upload → Open Bluetooth Terminal on your phone → Connect to device → Send command characters to control components.'
-                                : '📡 Fill in WiFi credentials above → Upload to ESP32 → It will poll your dashboard every 500ms and apply commands instantly.'}
+                                : '📡 Fill in WiFi credentials above → Upload to ESP32 → It will poll your dashboard every 100ms for an ultra-fast, instantaneous response.'}
                         </p>
                     </motion.div>
                 )}

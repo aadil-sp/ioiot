@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Cpu, Wifi, WifiOff, Zap, Trash2, ChevronRight, RefreshCw, Bluetooth } from 'lucide-react';
+import { Plus, Cpu, Wifi, WifiOff, Zap, Trash2, ChevronRight, RefreshCw, Bluetooth, Radio } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -17,6 +17,7 @@ export default function UserDashboard() {
     const [deleteConfirm, setDeleteConfirm] = useState(null);
 
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+    const currentUserId = localStorage.getItem('userId');
 
     useEffect(() => { fetchDevices(); }, []);
 
@@ -56,6 +57,9 @@ export default function UserDashboard() {
     };
 
     const onlineCount = devices.filter(d => d.isConnected).length;
+    const myDevices = devices.filter(d => d.owner?._id?.toString() === currentUserId || d.owner?.toString() === currentUserId);
+    const liveDevices = devices.filter(d => d.isLive && d.owner?._id?.toString() !== currentUserId && d.owner?.toString() !== currentUserId);
+    const isOwnDevice = (device) => !device.isLive || device.owner?._id?.toString() === currentUserId || device.owner?.toString() === currentUserId;
 
     return (
         <div className="min-h-screen p-6 md:p-10">
@@ -167,13 +171,20 @@ export default function UserDashboard() {
                                             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase ${device.mode === 'serial' ? 'text-blue-400/70 border-blue-400/20' : 'text-orange-500/70 border-orange-500/20'}`}>
                                                 {device.mode === 'serial' ? 'BT/Serial' : 'WiFi'}
                                             </span>
+                                            {device.isLive && (
+                                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border text-purple-400/70 border-purple-400/20 flex items-center gap-1">
+                                                    <Radio className="w-2.5 h-2.5" />LIVE
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={e => { e.stopPropagation(); setDeleteConfirm(device.deviceId); }}
-                                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-all">
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                                {isOwnDevice(device) && (
+                                    <button onClick={e => { e.stopPropagation(); setDeleteConfirm(device.deviceId); }}
+                                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-all">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                )}
                             </div>
 
                             <div className="flex items-center gap-2">

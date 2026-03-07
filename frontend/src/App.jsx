@@ -1,5 +1,6 @@
-import { useState, createContext, useContext, useEffect } from 'react';
+import { useState, createContext, useContext, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
@@ -7,7 +8,11 @@ import UserDashboard from './pages/UserDashboard';
 import DeviceDetail from './pages/DeviceDetail';
 import Profile from './pages/Profile';
 import Landing from './pages/Landing';
-import { Cpu, LogOut, LayoutDashboard, Shield, Sun, Moon, User, Menu, X } from 'lucide-react';
+import { Cpu, LogOut, LayoutDashboard, Shield, Sun, Moon, User, Menu, X, Bell } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+
+const API = import.meta.env.VITE_API_URL || '';
+const socket = io(API);
 
 export const ThemeContext = createContext({ dark: true, toggle: () => { } });
 
@@ -67,10 +72,28 @@ function NavContent({ auth, setAuth, dark, toggle, mobile, onClose }) {
 
 function AppShell({ auth, setAuth, dark, toggle }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notification, setNotification] = useState(null);
   const location = useLocation();
 
   // Close mobile menu on route change
   useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  // Listen for admin push notifications
+  useEffect(() => {
+    socket.on('adminNotification', (data) => {
+      setNotification(data);
+      setTimeout(() => setNotification(null), 8000);
+    });
+    return () => socket.off('adminNotification');
+  }, []);
+
+  const notifColors = {
+    info: { bg: 'border-blue-500/30 bg-blue-500/10', text: 'text-blue-300', icon: '📣' },
+    success: { bg: 'border-green-500/30 bg-green-500/10', text: 'text-green-300', icon: '✅' },
+    warning: { bg: 'border-yellow-500/30 bg-yellow-500/10', text: 'text-yellow-300', icon: '⚠️' },
+    error: { bg: 'border-red-500/30 bg-red-500/10', text: 'text-red-300', icon: '🚨' },
+  };
+  const nc = notifColors[notification?.type] || notifColors.info;
 
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${dark ? 'bg-[#050505] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
@@ -101,6 +124,30 @@ function AppShell({ auth, setAuth, dark, toggle }) {
           <NavContent auth={auth} setAuth={setAuth} dark={dark} toggle={toggle} mobile onClose={() => setMenuOpen(false)} />
         </div>
       )}
+
+      {/* Admin Push Notification Toast */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -60, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -60, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className={`fixed top-20 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md mx-auto px-4`}
+          >
+            <div className={`border rounded-2xl p-4 shadow-2xl backdrop-blur-xl flex items-start gap-3 ${nc.bg}`}>
+              <span className="text-xl shrink-0 mt-0.5">{nc.icon}</span>
+              <div className="flex-1 min-w-0">
+                <p className={`font-mono font-bold text-sm ${nc.text}`}>{notification.title}</p>
+                <p className="font-mono text-xs text-white/80 mt-0.5 leading-relaxed">{notification.message}</p>
+              </div>
+              <button onClick={() => setNotification(null)} className="text-white/40 hover:text-white shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main className="flex-1 relative overflow-x-hidden">
         <div className={`absolute top-1/4 left-1/4 w-[50vw] h-[50vh] rounded-full blur-[120px] pointer-events-none ${dark ? 'bg-orange-600/5' : 'bg-orange-400/8'}`}></div>

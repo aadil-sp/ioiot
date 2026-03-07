@@ -19,6 +19,7 @@ export default function Login({ setAuth }) {
             localStorage.setItem('token', res.data.token);
             localStorage.setItem('role', res.data.role);
             localStorage.setItem('username', res.data.username);
+            if (res.data.userId) localStorage.setItem('userId', res.data.userId);
             setAuth({
                 token: res.data.token,
                 role: res.data.role,

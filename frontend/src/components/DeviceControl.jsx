@@ -22,7 +22,7 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
         // to prevent Render/Vercel free tier sleep.
         const heartbeat = setInterval(() => {
             axios.get(`${import.meta.env.VITE_API_URL || ''}/api/ping`).catch(() => { });
-        }, 300000);
+        }, 60000);
 
         socket.on('deviceStateUpdate', (data) => {
             if (data.deviceId === deviceId) {
@@ -67,7 +67,7 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
         }
     };
 
-    const toggleControl = async (toggleType) => {
+    const toggleControl = (toggleType) => {
         if (!device) return;
         const currentState = device.state?.[toggleType] || false;
         const newState = !currentState;
@@ -78,18 +78,13 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
             state: { ...prev.state, [toggleType]: newState }
         }));
 
-        try {
-            await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/devices/${deviceId}/toggle`,
-                { toggleType, state: newState },
-                { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
-        } catch (err) {
-            console.error('Toggle failed:', err);
-            // Revert on failure
-            setDevice(prev => ({
-                ...prev,
-                state: { ...prev.state, [toggleType]: currentState }
-            }));
-        }
+        // --- INSTANT SOCKET COMMAND ---
+        socket.emit('sendControl', {
+            deviceId: deviceId,
+            widgetKey: toggleType,
+            value: newState,
+            token: localStorage.getItem('token')
+        });
     };
 
     const saveControls = async () => {
