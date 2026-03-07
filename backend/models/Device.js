@@ -6,7 +6,7 @@ const pinSchema = new mongoose.Schema({
     label: { type: String, required: true, default: 'New Pin' },
     mode: { type: String, enum: ['OUTPUT', 'INPUT', 'INPUT_PULLUP'], default: 'OUTPUT' },
     type: { type: String, enum: ['digital', 'pwm', 'analog_input'], default: 'digital' },
-    widgetType: { type: String, enum: ['toggle', 'slider', 'button', 'value_display'], default: 'toggle' },
+    widgetType: { type: String, enum: ['toggle', 'slider', 'button', 'value_display', 'servo_slider'], default: 'toggle' },
     widgetKey: { type: String, required: true },
     commandChar: { type: String, default: '' }, // Single char the ESP listens for e.g. 'G'
     value: { type: mongoose.Schema.Types.Mixed, default: false },
@@ -23,8 +23,10 @@ const deviceSchema = new mongoose.Schema({
         default: () => crypto.randomBytes(16).toString('hex'),
         unique: true
     },
-    // Device mode: 'wifi' = polls server, 'serial' = receives chars via Bluetooth/Serial
-    mode: { type: String, enum: ['wifi', 'serial'], default: 'wifi' },
+    // board: which physical board this is
+    board: { type: String, enum: ['esp32', 'esp8266', 'uno', 'nano', 'mega'], default: 'esp32' },
+    // Device mode: 'wifi'=cloud poll, 'serial'=Bluetooth chars, 'usb'=direct USB serial (Arduino)
+    mode: { type: String, enum: ['wifi', 'serial', 'usb'], default: 'wifi' },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     pins: [pinSchema],
     // WiFi credentials stored per-device for code generation

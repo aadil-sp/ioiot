@@ -10,6 +10,7 @@ import {
     MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle
 } from 'lucide-react';
 import { ThemeContext } from '../App';
+import { useSerial } from '../contexts/SerialContext';
 
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
@@ -84,6 +85,16 @@ const HARDWARE_PRESETS = [
 ];
 
 const COMMON_GPIOS = [2, 4, 5, 12, 13, 14, 15, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 34, 35, 36, 39];
+const ARDUINO_GPIOS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+
+// Map device board to compile FQBN
+const BOARD_FQBN = {
+    esp32: 'esp32:esp32:esp32',
+    esp8266: 'esp8266:esp8266:nodemcuv2',
+    uno: 'arduino:avr:uno',
+    nano: 'arduino:avr:nano',
+    mega: 'arduino:avr:mega',
+};
 
 export default function DeviceDetail() {
     const { id } = useParams();
@@ -102,15 +113,12 @@ export default function DeviceDetail() {
     const [showWifiPass, setShowWifiPass] = useState(false);
     const [savingWifi, setSavingWifi] = useState(false);
     const [showPresets, setShowPresets] = useState(false);
-    // ── Serial Monitor (Beta / Web Serial API) ──
-    const [serialPort, setSerialPort] = useState(null);
-    const [serialLog, setSerialLog] = useState([]);
-    const [serialConnected, setSerialConnected] = useState(false);
-    const [serialInput, setSerialInput] = useState('');
-    const [baudRate, setBaudRate] = useState(115200);
-    const [serialReader, setSerialReader] = useState(null);
-    const betaMode = true; // Flash & Monitor is always enabled (beta gate removed)
+    const betaMode = true; // Flash & Monitor is always enabled
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+
+    // ── Global serial from context (persists across tab changes) ──
+    const { serialConnected, serialLog, setSerialLog, baudRate, setBaudRate, connect: connectSerial, disconnect: disconnectSerial, send: sendSerialRaw, addLog: addSerialLog, autoConnecting } = useSerial();
+    const [serialInput, setSerialInput] = useState('');
 
     // Theme classes
     const bg = dark ? 'bg-[#050505]' : 'bg-gray-50';
@@ -161,27 +169,43 @@ export default function DeviceDetail() {
             }
         });
         return () => {
-            clearInterval(keepAlive);
+            clearInterval(heartbeat);
             socket.off('deviceStateUpdate');
             socket.off('deviceStatusUpdate');
             socket.off('deviceConfigUpdate');
         };
     }, [id]);
 
+    // ── Arduino USB: send JSON control command over serial ──
+    const sendSerialControl = useCallback((widgetKey, value) => {
+        sendSerialRaw({ k: widgetKey, v: value });
+    }, [sendSerialRaw]);
+
+    const sendSerial = async () => {
+        if (!serialInput.trim()) return;
+        await sendSerialRaw(serialInput + '\n');
+        setSerialInput('');
+    };
+
     const sendControl = (widgetKey, value) => {
-        // Optimistic UI state update
+        // Optimistic UI update
         setDevice(prev => {
             if (!prev) return prev;
             return { ...prev, pins: prev.pins.map(p => p.widgetKey === widgetKey ? { ...p, value } : p) };
         });
 
-        // Instant socket command (Blynk-style)
-        socket.emit('sendControl', {
-            deviceId: id,
-            widgetKey,
-            value,
-            token: localStorage.getItem('token')
-        });
+        if (device?.mode === 'usb') {
+            // Arduino USB: send JSON via Web Serial
+            sendSerialControl(widgetKey, value);
+        } else {
+            // WiFi/Cloud: Instant socket command (Blynk-style)
+            socket.emit('sendControl', {
+                deviceId: id,
+                widgetKey,
+                value,
+                token: localStorage.getItem('token')
+            });
+        }
     };
 
     const saveWifi = async () => {
@@ -241,56 +265,59 @@ export default function DeviceDetail() {
     // ─── Code Generator ──────────────────────────────────────────────────────
     const generateCode = () => {
         if (!device) return '';
+        const board = device.board || 'esp32';
+        const isArduino = ['uno', 'nano', 'mega'].includes(board);
+        const isESP8266 = board === 'esp8266';
         const ssid = device.wifiSSID || 'YOUR_WIFI_SSID';
         const pass = device.wifiPassword || 'YOUR_WIFI_PASSWORD';
         const isSerial = device.mode === 'serial';
+        const isUSB = device.mode === 'usb';
+
+        const gpioList = isArduino ? ARDUINO_GPIOS : COMMON_GPIOS;
+        const pinMacroFn = (p) => `PIN_${sanitize(p.label)}`;
+        const sanitizeFn = (s) => s.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 
         const pinDefs = device.pins.map(p =>
-            `#define ${pinMacro(p).padEnd(20)} ${p.pinNumber}`
+            `#define ${pinMacroFn(p).padEnd(20)} ${p.pinNumber}`
         ).join('\n');
 
         const setupPins = device.pins.map(p => {
-            if (p.type === 'servo') return `  myServo_${sanitize(p.label)}.attach(${pinMacro(p)});`;
-            return `  pinMode(${pinMacro(p)}, ${p.mode === 'INPUT' ? 'INPUT' : p.mode === 'INPUT_PULLUP' ? 'INPUT_PULLUP' : 'OUTPUT'});`;
+            if (p.type === 'servo') return `  myServo_${sanitizeFn(p.label)}.attach(${pinMacroFn(p)});`;
+            return `  pinMode(${pinMacroFn(p)}, ${p.mode === 'INPUT' ? 'INPUT' : p.mode === 'INPUT_PULLUP' ? 'INPUT_PULLUP' : 'OUTPUT'});`;
         }).join('\n');
 
-        const servoIncludes = device.pins.some(p => p.type === 'servo')
-            ? '#include <ESP32Servo.h>\n' : '';
+        const servoLib = isArduino ? '#include <Servo.h>' : (board === 'esp8266' ? '#include <Servo.h>' : '#include <ESP32Servo.h>');
+        const servoIncludes = device.pins.some(p => p.type === 'servo') ? servoLib + '\n' : '';
         const servoObjects = device.pins.filter(p => p.type === 'servo')
-            .map(p => `Servo myServo_${sanitize(p.label)};`).join('\n');
+            .map(p => `Servo myServo_${sanitizeFn(p.label)};`).join('\n');
 
-        if (isSerial) {
-            const stateVars = device.pins
-                .filter(p => p.type === 'digital' && p.mode === 'OUTPUT')
-                .map(p => `bool ${pinMacro(p)}_state = false;`).join('\n');
+        // ── ARDUINO USB MODE ──────────────────────────────────────────────
+        if (isUSB || isArduino) {
+            const stateVars = device.pins.filter(p => p.type === 'digital' && p.mode === 'OUTPUT')
+                .map(p => `bool ${sanitizeFn(p.label)}_state = false;`).join('\n');
 
-            const commandCases = device.pins
-                .filter(p => p.commandChar && p.mode === 'OUTPUT')
-                .map(p => {
-                    const macro = pinMacro(p);
-                    if (p.type === 'servo') {
-                        return `    case '${p.commandChar.toUpperCase()}':\n      myServo_${sanitize(p.label)}.write(90); // Rotate to 90°\n      Serial.println("${p.label}: 90 deg"); break;`;
-                    }
-                    if (p.type === 'pwm' || p.type === 'dc_motor') {
-                        return `    case '${p.commandChar.toUpperCase()}':\n      analogWrite(${macro}, 128); // Set speed (0-255)\n      Serial.println("${p.label}: speed set"); break;`;
-                    }
-                    return `    case '${p.commandChar.toUpperCase()}':\n      ${macro}_state = !${macro}_state;\n      digitalWrite(${macro}, ${macro}_state ? HIGH : LOW);\n      Serial.println("${p.label}: " + String(${macro}_state ? "ON" : "OFF")); break;`;
-                }).join('\n');
-
-            const charMap = device.pins.filter(p => p.commandChar && p.mode === 'OUTPUT')
-                .map(p => `//   '${p.commandChar.toUpperCase()}' → ${p.label} (${p.hardwareType || p.type})`).join('\n');
+            const applyLogic = device.pins.filter(p => p.mode === 'OUTPUT').map(p => {
+                const macro = pinMacroFn(p);
+                const key = p.widgetKey;
+                if (p.type === 'servo') {
+                    return `    if (doc.containsKey("${key}")) { int a = doc["${key}"]; a = constrain(a, ${p.min || 0}, ${p.max || 180}); myServo_${sanitizeFn(p.label)}.write(a); }`;
+                }
+                if (p.type === 'pwm') {
+                    return `    if (doc.containsKey("${key}")) { analogWrite(${macro}, (int)doc["${key}"]); }`;
+                }
+                return `    if (doc.containsKey("${key}")) { bool v = doc["${key}"]; ${sanitizeFn(p.label)}_state = v; digitalWrite(${macro}, v ? HIGH : LOW); }`;
+            }).filter(Boolean).join('\n');
 
             return `// ================================================================
-// ${device.name} — IoIoT Serial/Bluetooth Bare-Metal Mode
+// ${device.name} — IoIoT Arduino USB Direct Control
 // ================================================================
-// Controls via single character commands over Serial or Bluetooth.
-// Use "Serial Monitor" or any Bluetooth Terminal app on your phone.
-//
-// COMMAND MAP:
-${charMap || '// (no output pins defined yet)'}
+// Browser sends JSON commands via Web Serial API:
+//   {"k":"<widgetKey>","v":<value>}\n
+// This sketch parses and applies them instantly.
+// Required Library: ArduinoJson
 // ================================================================
 
-${servoIncludes}#include "BluetoothSerial.h"
+${servoIncludes}#include <ArduinoJson.h>
 
 // ── Pin Definitions ────────────────────────────────────────────
 ${pinDefs}
@@ -298,125 +325,154 @@ ${pinDefs}
 // ── Servo Objects ──────────────────────────────────────────────
 ${servoObjects || '// (no servo pins)'}
 
-// ── State Variables (for digital output pins) ──────────────────
+// ── State ──────────────────────────────────────────────────────
 ${stateVars || '// (none)'}
-
-BluetoothSerial SerialBT;
 
 void setup() {
   Serial.begin(115200);
-  delay(500);
+  while (!Serial); // Leonardo/Mega: wait for USB
+  delay(300);
 
-  // ── Initialize Pins ────────────────────────────────────────
+  // ── Initialize Pins ──────────────────────────────────────
 ${setupPins}
 
-  SerialBT.begin("${device.name.replace(/\s+/g, '_')}"); // Bluetooth device name
-  Serial.println("✓ Bluetooth started: ${device.name}");
-  Serial.println("Waiting for commands...");
+  Serial.println("IoIoT Ready");
+}
+
+void loop() {
+  if (Serial.available() > 0) {
+    String line = Serial.readStringUntil('\\n');
+    line.trim();
+    if (line.length() == 0) return;
+
+    StaticJsonDocument<128> doc;
+    DeserializationError err = deserializeJson(doc, line);
+    if (err) { Serial.println("ERR:JSON"); return; }
+
+    const char* k = doc["k"];
+    if (!k) { Serial.println("ERR:KEY"); return; }
+
+    String key = String(k);
+
+    // ── Apply Commands ──────────────────────────────────────
+${applyLogic || '    // Configure pins in Pin Config tab first'}
+
+    // Echo back as confirmation
+    Serial.println(line);
+  }
+}`;
+        }
+
+        // ── BLUETOOTH / SERIAL MODE ───────────────────────────────────────
+        const stateVarsBT = device.pins
+            .filter(p => p.type === 'digital' && p.mode === 'OUTPUT')
+            .map(p => `bool ${pinMacroFn(p)}_state = false;`).join('\n');
+        const commandCases = device.pins
+            .filter(p => p.commandChar && p.mode === 'OUTPUT')
+            .map(p => {
+                const macro = pinMacroFn(p);
+                if (p.type === 'servo') return `    case '${p.commandChar.toUpperCase()}':\n      myServo_${sanitizeFn(p.label)}.write(90);\n      Serial.println("${p.label}: 90 deg"); break;`;
+                if (p.type === 'pwm') return `    case '${p.commandChar.toUpperCase()}':\n      analogWrite(${macro}, 128);\n      Serial.println("${p.label}: speed set"); break;`;
+                return `    case '${p.commandChar.toUpperCase()}':\n      ${macro}_state = !${macro}_state;\n      digitalWrite(${macro}, ${macro}_state ? HIGH : LOW);\n      Serial.println("${p.label}: " + String(${macro}_state ? "ON" : "OFF")); break;`;
+            }).join('\n');
+        const charMap = device.pins.filter(p => p.commandChar && p.mode === 'OUTPUT')
+            .map(p => `//   '${p.commandChar.toUpperCase()}' → ${p.label}`).join('\n');
+
+        if (isSerial) {
+            const btInclude = board === 'esp8266' ? '' : '\n#include "BluetoothSerial.h"\nBluetoothSerial SerialBT;';
+            const btBegin = board === 'esp8266' ? '' : `  SerialBT.begin("${device.name.replace(/\s+/g, '_')}");`;
+            const btRead = board === 'esp8266' ? '' : '\n  if (SerialBT.available()) received = SerialBT.read();';
+            return `// ================================================================
+// ${device.name} — IoIoT Bluetooth/Serial Mode (${board.toUpperCase()})
+// COMMAND MAP:\n${charMap || '// (no output pins defined)'}
+// ================================================================
+
+${servoIncludes}${btInclude}
+
+${pinDefs}
+${servoObjects ? '\n' + servoObjects : ''}
+${stateVarsBT ? '\n' + stateVarsBT : ''}
+
+void setup() {
+  Serial.begin(115200);
+${setupPins}
+${btBegin}
+  Serial.println("Ready — ${device.name}");
 }
 
 void loop() {
   char received = 0;
-
-  if (Serial.available())   received = Serial.read();   // USB Serial (testing)
-  if (SerialBT.available()) received = SerialBT.read();  // Bluetooth
-
-  if (received != 0) {
-    received = toupper(received); // Accept upper & lowercase
-    Serial.print("CMD: "); Serial.println(received);
-
+  if (Serial.available()) received = Serial.read();${btRead}
+  if (received) {
+    received = toupper(received);
     switch (received) {
-${commandCases || '      // Add output pins to generate cases here'}
-
-      default:
-        Serial.print("Unknown command: "); Serial.println(received);
-        break;
+${commandCases || '      // Add pins in Pin Config tab'}
+      default: break;
     }
   }
-
   delay(10);
 }`;
         }
 
-        // ── WIFI / CLOUD MODE ─────────────────────────────────────────────
-        const stateVars = device.pins.filter(p => p.type === 'digital' && p.mode === 'OUTPUT')
-            .map(p => `bool last_${sanitize(p.label)} = false;`).join('\n');
-
-        const applyLogic = device.pins.filter(p => p.mode === 'OUTPUT').map(p => {
-            const macro = pinMacro(p);
+        // ── WIFI CLOUD MODE ───────────────────────────────────────────────
+        const stateVarsWifi = device.pins.filter(p => p.type === 'digital' && p.mode === 'OUTPUT')
+            .map(p => `bool last_${sanitizeFn(p.label)} = false;`).join('\n');
+        const applyLogicWifi = device.pins.filter(p => p.mode === 'OUTPUT').map(p => {
+            const macro = pinMacroFn(p);
             const key = p.widgetKey;
-            if (p.type === 'servo') {
-                return `      { int angle = doc["${key}"] | 90;\n        angle = constrain(angle, ${p.min || 0}, ${p.max || 180});\n        myServo_${sanitize(p.label)}.write(angle);\n        Serial.println("${p.label}: " + String(angle) + " deg"); }`;
-            }
-            if (p.type === 'pwm') {
-                return `      { int spd = doc["${key}"] | 0;\n        ledcWrite(0, spd); // attach channel to pin in setup if needed\n        analogWrite(${macro}, spd);\n        Serial.println("${p.label}: " + String(spd)); }`;
-            }
-            if (p.type === 'digital') {
-                return `      { bool v = doc["${key}"] | false;\n        if(v != last_${sanitize(p.label)}) {\n          digitalWrite(${macro}, v ? HIGH : LOW);\n          Serial.println("${p.label}: " + String(v ? "ON" : "OFF"));\n          last_${sanitize(p.label)} = v;\n        } }`;
-            }
+            if (p.type === 'servo') return `      { int angle = doc["${key}"] | 90; angle = constrain(angle, ${p.min || 0}, ${p.max || 180}); myServo_${sanitizeFn(p.label)}.write(angle); }`;
+            if (p.type === 'pwm') return `      { int spd = doc["${key}"] | 0; analogWrite(${macro}, spd); }`;
+            if (p.type === 'digital') return `      { bool v = doc["${key}"] | false; if(v != last_${sanitizeFn(p.label)}) { digitalWrite(${macro}, v ? HIGH : LOW); last_${sanitizeFn(p.label)} = v; } }`;
             return '';
         }).filter(Boolean).join('\n');
 
+        const wifiLib = isESP8266 ? '#include <ESP8266WiFi.h>\n#include <ESP8266HTTPClient.h>' : '#include <WiFi.h>\n#include <HTTPClient.h>\n#include "esp_wifi.h"';
+        const wifiPower = isESP8266 ? '  WiFi.setOutputPower(10);' : '  esp_wifi_set_max_tx_power(34);';
+        const boardName = board === 'esp8266' ? 'ESP8266' : 'ESP32';
+
         return `// ================================================================
-// ${device.name} — IoIoT WiFi Cloud Mode
-// ================================================================
-// This ESP32 polls your IoIoT dashboard every 100ms for "Instant"
-// response times, just like the Blynk app.
+// ${device.name} — IoIoT WiFi Cloud Mode (${boardName})
+// Polls dashboard every 100ms for sub-200ms response time.
 // ================================================================
 
-${servoIncludes}#include <WiFi.h>
-#include <HTTPClient.h>
+${servoIncludes}${wifiLib}
 #include <ArduinoJson.h>
-#include "esp_wifi.h"
 
-// ── WiFi Credentials ────────────────────────────────────────────
 const char* ssid      = "${ssid}";
 const char* password  = "${pass}";
-
-// ── IoIoT Server ────────────────────────────────────────────────
 const char* AUTH_TOKEN = "${device.authToken}";
 const char* SERVER_URL = "${API || 'https://aadilsp-ioiot-backend.hf.space'}/api/esp/state";
 
 // ── Pin Definitions ────────────────────────────────────────────
 ${pinDefs}
 
-// ── Servo Objects ──────────────────────────────────────────────
 ${servoObjects || '// (no servo pins)'}
-
-// ── State Tracking ─────────────────────────────────────────────
-${stateVars || '// (no digital pins)'}
+${stateVarsWifi ? '\n' + stateVarsWifi : ''}
 
 void setup() {
   Serial.begin(115200);
-  delay(2000); // Wait for power stabilisation
+  delay(${isESP8266 ? '1000' : '2000'});
 
-  // ── Initialize Pins ────────────────────────────────────────
 ${setupPins}
 
-  // ── Connect to WiFi ────────────────────────────────────────
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  esp_wifi_set_max_tx_power(34); // Lower TX power to prevent brownout
+${wifiPower}
   Serial.print("Connecting to WiFi");
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries++ < 40) {
     delay(500); Serial.print(".");
   }
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\\n✓ Connected! IP: " + WiFi.localIP().toString());
+    Serial.println("\\n\u2713 Connected! IP: " + WiFi.localIP().toString());
   } else {
-    Serial.println("\\n✗ WiFi failed. Restarting...");
+    Serial.println("\\n\u2717 WiFi failed. Restarting...");
     ESP.restart();
   }
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi disconnected. Reconnecting...");
-    WiFi.reconnect();
-    delay(3000);
-    return;
-  }
+  if (WiFi.status() != WL_CONNECTED) { WiFi.reconnect(); delay(3000); return; }
 
   HTTPClient http;
   http.begin(SERVER_URL);
@@ -426,20 +482,14 @@ void loop() {
 
   if (code > 0) {
     StaticJsonDocument<1024> doc;
-    DeserializationError err = deserializeJson(doc, http.getString());
-    if (!err) {
-      // ── Apply Pin States ────────────────────────────────────
-${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
+    if (!deserializeJson(doc, http.getString())) {
+${applyLogicWifi || '      // Configure pins in Pin Config tab'}
     }
-  } else {
-    // Serial.println("HTTP Error: " + String(code));
   }
   http.end();
-
-  delay(100); // Poll every 100ms for sub-200ms reactive time
+  delay(100);
 }`;
     };
-
     const pinMacro = (p) => `PIN_${sanitize(p.label)}`;
     const sanitize = (s) => s.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 
@@ -459,7 +509,6 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
         a.click(); URL.revokeObjectURL(url);
     };
 
-    // ── OS Detection ────────────────────────────────────────────
     const getOS = () => {
         const ua = navigator.userAgent;
         if (/Android/i.test(ua)) return 'android';
@@ -472,88 +521,6 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
     const os = getOS();
     const supportsWebSerial = typeof navigator !== 'undefined' && 'serial' in navigator;
 
-    // ── Web Serial ───────────────────────────────────────────────
-    const connectSerial = async () => {
-        if (!supportsWebSerial) {
-            alert('Web Serial is not supported. Please use Chrome or Edge on desktop.');
-            return;
-        }
-        try {
-            const port = await navigator.serial.requestPort();
-            await port.open({ baudRate: Number(baudRate) });
-            setSerialPort(port);
-            setSerialConnected(true);
-            setSerialLog([{ type: 'sys', text: `✓ Connected at ${baudRate} baud`, time: new Date().toLocaleTimeString() }]);
-            // Read loop
-            const reader = port.readable.getReader();
-            setSerialReader(reader);
-            const decoder = new TextDecoder();
-            let buffer = '';
-            const read = async () => {
-                try {
-                    while (true) {
-                        const { value, done } = await reader.read();
-                        if (done) break;
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop();
-                        lines.forEach(line => {
-                            if (line.trim()) {
-                                setSerialLog(prev => [...prev.slice(-200), { type: 'rx', text: line.trim(), time: new Date().toLocaleTimeString() }]);
-                            }
-                        });
-                    }
-                } catch { }
-            };
-            read();
-        } catch (err) {
-            if (err.name !== 'NotFoundError') console.error(err);
-        }
-    };
-
-    const disconnectSerial = async () => {
-        try {
-            if (serialReader) { await serialReader.cancel(); }
-            if (serialPort) { await serialPort.close(); }
-        } catch { }
-        setSerialPort(null); setSerialReader(null); setSerialConnected(false);
-        setSerialLog(prev => [...prev, { type: 'sys', text: '× Disconnected', time: new Date().toLocaleTimeString() }]);
-    };
-
-    const sendSerial = async () => {
-        if (!serialPort || !serialInput.trim()) return;
-        try {
-            const writer = serialPort.writable.getWriter();
-            await writer.write(new TextEncoder().encode(serialInput + '\n'));
-            writer.releaseLock();
-            setSerialLog(prev => [...prev, { type: 'tx', text: serialInput, time: new Date().toLocaleTimeString() }]);
-            setSerialInput('');
-        } catch (err) { console.error(err); }
-    };
-
-    // ── Cloud Compile + Browser Flash State ─────────────────────────────
-    const [selectedBoard, setSelectedBoard] = useState('esp32:esp32:esp32');
-    const [compiling, setCompiling] = useState(false);
-    const [compileLogs, setCompileLogs] = useState([]);
-    const [compiledFiles, setCompiledFiles] = useState(null);
-    const [flashing, setFlashing] = useState(false);
-    const [flashProgress, setFlashProgress] = useState(0);
-    const [flashDone, setFlashDone] = useState(false);
-    const compileLogRef = useRef(null);
-
-    // Auto-scroll compile log
-    useEffect(() => {
-        if (compileLogRef.current) compileLogRef.current.scrollTop = compileLogRef.current.scrollHeight;
-    }, [compileLogs]);
-
-    const BOARDS = [
-        { fqbn: 'esp32:esp32:esp32', label: 'ESP32 Dev Module (most common)' },
-        { fqbn: 'esp32:esp32:esp32s2', label: 'ESP32-S2' },
-        { fqbn: 'esp32:esp32:esp32s3', label: 'ESP32-S3' },
-        { fqbn: 'esp32:esp32:esp32c3', label: 'ESP32-C3' },
-        { fqbn: 'esp32:esp32:nodemcu-32s', label: 'NodeMCU-32S' },
-        { fqbn: 'esp32:esp32:wemos_d1_mini32', label: 'Wemos D1 Mini32' },
-    ];
 
     const compileCode = async () => {
         setCompiling(true);
@@ -694,6 +661,9 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
     );
 
     const isSerial = device.mode === 'serial';
+    const isUSB = device.mode === 'usb';
+    const isESP8266 = device.board === 'esp8266';
+    const boardLabel = device.board ? ({ esp32: 'ESP32', esp8266: 'ESP8266', uno: 'Uno', nano: 'Nano', mega: 'Mega' }[device.board] || device.board.toUpperCase()) : null;
 
     return (
         <div className={`min-h-screen p-6 md:p-10 max-w-5xl mx-auto`}>
@@ -704,10 +674,12 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                 </button>
                 <div className="flex flex-col md:flex-row md:items-center gap-4">
                     <div className="flex items-center gap-4 flex-1">
-                        <div className={`w-14 h-14 rounded-xl flex items-center justify-center border ${device.isConnected ? 'border-green-500/30 bg-green-500/10' : dark ? 'border-[#222] bg-[#111]' : 'border-gray-200 bg-gray-100'}`}>
-                            {isSerial
-                                ? <Bluetooth className="w-7 h-7 text-blue-400" />
-                                : device.isConnected ? <Wifi className="w-7 h-7 text-green-500" /> : <WifiOff className={`w-7 h-7 ${dark ? 'text-[#333]' : 'text-gray-300'}`} />}
+                        <div className={`w-14 h-14 rounded-xl flex items-center justify-center border ${serialConnected && isUSB ? 'border-green-500/30 bg-green-500/10' : device.isConnected && !isUSB ? 'border-green-500/30 bg-green-500/10' : dark ? 'border-[#222] bg-[#111]' : 'border-gray-200 bg-gray-100'}`}>
+                            {isUSB
+                                ? <Usb className={`w-7 h-7 ${serialConnected ? 'text-green-400' : 'text-[#555]'}`} />
+                                : isSerial
+                                    ? <Bluetooth className="w-7 h-7 text-blue-400" />
+                                    : device.isConnected ? <Wifi className="w-7 h-7 text-green-500" /> : <WifiOff className={`w-7 h-7 ${dark ? 'text-[#333]' : 'text-gray-300'}`} />}
                         </div>
                         <div>
                             <h2 className={`text-2xl font-black font-mono uppercase tracking-widest ${dark ? 'text-white' : 'text-gray-900'}`}>{device.name}</h2>
@@ -779,18 +751,18 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                 {[
                     { key: 'control', icon: <Sliders className="w-4 h-4" />, label: 'Control' },
                     { key: 'config', icon: <Settings className="w-4 h-4" />, label: 'Pin Config' },
-                    { key: 'code', icon: <Code2 className="w-4 h-4" />, label: 'ESP32 Code' },
-                    { key: 'flash', icon: <MonitorPlay className="w-4 h-4" />, label: betaMode ? 'Flash & Monitor' : 'Flash Guide', beta: true },
+                    { key: 'code', icon: <Code2 className="w-4 h-4" />, label: 'Device Code' },
+                    { key: 'flash', icon: <MonitorPlay className="w-4 h-4" />, label: 'Flash & Monitor', beta: true },
                 ].map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
                         className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg font-mono font-bold text-xs sm:text-sm transition-all ${tab === t.key
-                            ? (t.beta && betaMode ? 'bg-purple-500 text-white' : 'bg-orange-500 text-black')
+                            ? (t.beta ? 'bg-purple-500 text-white' : 'bg-orange-500 text-black')
                             : dark ? 'text-[#555] hover:text-white' : 'text-gray-400 hover:text-gray-900'
                             }`}>
                         {t.icon}
                         <span className="hidden sm:inline">{t.label}</span>
                         <span className="sm:hidden">{t.label.split(' ')[0]}</span>
-                        {t.beta && betaMode && <span className="text-[9px] bg-purple-400/20 px-1 rounded hidden sm:inline">BETA</span>}
+                        {t.beta && <span className="text-[9px] bg-purple-400/20 px-1 rounded hidden sm:inline">BETA</span>}
                     </button>
                 ))}
             </div>
@@ -800,6 +772,29 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                 {/* ── CONTROL TAB ─────────────────────────────────────────── */}
                 {tab === 'control' && (
                     <motion.div key="control" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                        {/* Arduino USB mode banner */}
+                        {device.mode === 'usb' && (
+                            <div className={`mb-4 p-4 rounded-xl border flex items-center justify-between gap-3 ${serialConnected ? 'bg-green-500/5 border-green-500/30' : 'bg-[#111] border-[#1a1a1a]'
+                                }`}>
+                                <div className="flex items-center gap-3">
+                                    <Usb className={`w-5 h-5 shrink-0 ${serialConnected ? 'text-green-400' : 'text-[#555]'}`} />
+                                    <div>
+                                        <p className={`font-mono text-xs font-bold ${serialConnected ? 'text-green-400' : dark ? 'text-white' : 'text-gray-800'}`}>
+                                            {serialConnected ? 'USB Connected — Direct control active' : autoConnecting ? 'Auto-connecting...' : 'USB Not Connected'}
+                                        </p>
+                                        <p className={`font-mono text-xs mt-0.5 ${mutedText}`}>
+                                            {serialConnected ? 'Commands sent directly to Arduino over USB' : 'Connect via Flash & Monitor tab to control via USB'}
+                                        </p>
+                                    </div>
+                                </div>
+                                {!serialConnected && (
+                                    <button onClick={() => connectSerial({ requestNew: true })}
+                                        className="shrink-0 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-mono font-bold hover:bg-green-500 hover:text-white transition-all">
+                                        <Usb className="w-3.5 h-3.5 inline mr-1" />Connect
+                                    </button>
+                                )}
+                            </div>
+                        )}
                         {isSerial && (
                             <div className="mb-4 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
                                 <p className="text-blue-400 font-mono text-xs">
@@ -1043,12 +1038,18 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                                 📋 How to Flash Your ESP32
                             </h3>
                             <div className="space-y-3">
-                                {[
+                                {isUSB ? [
+                                    { step: '1', title: 'Download the Code', desc: 'Click "Download .ino" to save your Arduino sketch.' },
+                                    { step: '2', title: 'Install Arduino IDE', desc: 'Get Arduino IDE from arduino.cc/en/software for your OS.' },
+                                    { step: '3', title: 'Install ArduinoJson Library', desc: 'Tools → Manage Libraries → Search "ArduinoJson" → Install. Required for JSON USB commands.' },
+                                    { step: '4', title: 'Select Board & Port', desc: `Tools → Board → Arduino AVR Boards → ${boardLabel || 'Arduino Uno'}. Tools → Port → your COM/USB port.` },
+                                    { step: '5', title: 'Upload!', desc: 'Click the Upload button (→). Then come back and use the Serial Monitor here to control it live.' },
+                                ] : [
                                     { step: '1', title: 'Download the Code', desc: 'Click "Download .ino" above to save the generated Arduino code file.' },
                                     { step: '2', title: 'Install Arduino IDE', desc: os === 'windows' ? 'Download Arduino IDE from arduino.cc/en/software — Windows installer available.' : os === 'mac' ? 'Download Arduino IDE from arduino.cc/en/software or install via Homebrew: brew install --cask arduino.' : 'sudo apt install arduino OR download from arduino.cc/en/software.' },
-                                    { step: '3', title: 'Add ESP32 Board', desc: 'In Arduino IDE: File → Preferences → Add "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json" to Board Manager URLs. Then Tools → Board → Board Manager → Search "esp32" → Install.' },
-                                    { step: '4', title: 'Install Libraries', desc: `Tools → Manage Libraries → Search and install: ArduinoJson${device?.pins.some(p => p.type === 'servo') ? ', ESP32Servo' : ''}.` },
-                                    { step: '5', title: 'Select Board & Port', desc: 'Tools → Board → ESP32 Arduino → Select your board (ESP32 Dev Module). Tools → Port → Select your COM/USB port.' },
+                                    { step: '3', title: 'Add Board Support', desc: isESP8266 ? 'Add ESP8266 board URL: http://arduino.esp8266.com/stable/package_esp8266com_index.json. Then Board Manager → Search "esp8266" → Install.' : 'File → Preferences → Add "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json". Then Board Manager → Search "esp32" → Install.' },
+                                    { step: '4', title: 'Install Libraries', desc: `Tools → Manage Libraries → Search and install: ArduinoJson${device?.pins.some(p => p.type === 'servo') ? (isESP8266 || isUSB ? ', Servo' : ', ESP32Servo') : ''}.` },
+                                    { step: '5', title: 'Select Board & Port', desc: `Tools → Board → ${boardLabel || 'ESP32 Dev Module'}. Tools → Port → your COM/USB port.` },
                                     { step: '6', title: 'Upload!', desc: 'Click the Upload button (→). Hold the BOOT button on your ESP32 during upload if needed.' },
                                 ].map(({ step, title, desc }) => (
                                     <div key={step} className="flex gap-3">
@@ -1078,15 +1079,15 @@ ${applyLogic || '      // Configure pins in Pin Config tab on the dashboard'}
                                             {[9600, 19200, 38400, 57600, 115200, 230400].map(b => <option key={b} value={b}>{b}</option>)}
                                         </select>
                                         {serialConnected ? (
-                                            <button onClick={disconnectSerial}
+                                            <button onClick={() => disconnectSerial()}
                                                 className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-mono font-bold hover:bg-red-500 hover:text-white transition-all">
                                                 Disconnect
                                             </button>
                                         ) : (
-                                            <button onClick={connectSerial}
+                                            <button onClick={() => connectSerial({ requestNew: true, baud: Number(baudRate) })}
                                                 disabled={!supportsWebSerial}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-400 text-xs font-mono font-bold hover:bg-purple-500 hover:text-white transition-all disabled:opacity-40">
-                                                <Usb className="w-3 h-3" /> Connect USB
+                                                <Usb className="w-3 h-3" /> {autoConnecting ? 'Auto-connecting...' : 'Connect USB'}
                                             </button>
                                         )}
                                         <button onClick={() => setSerialLog([])} className="p-1.5 rounded-lg text-red-400/40 hover:text-red-400 transition-all">
