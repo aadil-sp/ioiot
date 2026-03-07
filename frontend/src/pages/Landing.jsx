@@ -31,7 +31,7 @@ export default function Landing() {
                     <h1 className="text-5xl sm:text-7xl font-black tracking-tight mb-6">
                         The Ultimate <br className="sm:hidden" />
                         <span className="bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 bg-clip-text text-transparent uppercase">
-                            ioIoT Platform
+                            ioiot
                         </span>
                     </h1>
 
