@@ -71,16 +71,34 @@ export default function AdminDashboard() {
     };
 
     const toggleLive = async (deviceId) => {
+        const device = devices.find(d => d.deviceId === deviceId);
+        if (!device) return;
+        const newLiveState = !device.isLive;
+
         setLiveLoading(prev => ({ ...prev, [deviceId]: true }));
+        // Optimistic update
+        setDevices(prev => prev.map(d => d.deviceId === deviceId ? { ...d, isLive: newLiveState } : d));
+
         try {
-            const res = await axios.post(`${API}/api/devices/${deviceId}/live`, {}, { headers });
-            setDevices(prev => prev.map(d => d.deviceId === deviceId ? { ...d, isLive: res.data.isLive } : d));
+            // Primary: use the dedicated /live toggle endpoint
+            try {
+                const res = await axios.post(`${API}/api/devices/${deviceId}/live`, {}, { headers });
+                setDevices(prev => prev.map(d => d.deviceId === deviceId ? { ...d, isLive: res.data.isLive } : d));
+            } catch (primaryErr) {
+                if (primaryErr.response?.status === 404) {
+                    // Fallback: use the universal PUT endpoint (works on all backend versions)
+                    const res = await axios.put(`${API}/api/devices/${deviceId}`, { isLive: newLiveState }, { headers });
+                    setDevices(prev => prev.map(d => d.deviceId === deviceId ? { ...d, isLive: res.data.isLive ?? newLiveState } : d));
+                } else {
+                    throw primaryErr;
+                }
+            }
         } catch (err) {
             console.error('toggleLive error:', err);
             const errMsg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Unknown error';
             alert(`Failed to toggle Live/Public: ${errMsg}`);
-            // Refresh devices to sync UI state
-            fetchAll();
+            // Revert optimistic update on error
+            setDevices(prev => prev.map(d => d.deviceId === deviceId ? { ...d, isLive: device.isLive } : d));
         } finally {
             setLiveLoading(prev => ({ ...prev, [deviceId]: false }));
         }
