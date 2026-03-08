@@ -970,7 +970,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                                     </div>
                                     <p className={`font-mono text-xs ${mutedText}`}>
                                         {betaMode
-                                            ? 'Cloud-compile your code then flash directly to ESP32 over USB'
+                                            ? `Cloud-compile your code then flash directly to ${selectedBoard.startsWith('arduino:') ? 'Arduino' : 'ESP32'} over USB`
                                             : 'Enable Beta Mode in Profile to unlock one-click compile & flash'}
                                     </p>
                                 </div>
@@ -993,7 +993,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                                                 {flashing
                                                     ? <><div className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" /> Flashing {flashProgress}%</>
                                                     : flashDone ? <><Check className="w-3.5 h-3.5" /> Done!</>
-                                                        : <><Usb className="w-3.5 h-3.5" /> Flash to ESP32</>}
+                                                        : <><Usb className="w-3.5 h-3.5" /> Flash to {selectedBoard.startsWith('arduino:') ? 'Arduino' : 'ESP32'}</>}
                                             </button>
                                         </>
                                     )}
