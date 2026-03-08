@@ -54,7 +54,7 @@ export default function Profile() {
     const inputCls = dark
         ? 'bg-black border-[#333] focus:border-orange-500 text-white'
         : 'bg-gray-50 border-gray-300 focus:border-orange-400 text-gray-900';
-    const mutedText = dark ? 'text-[#555]' : 'text-gray-400';
+    const mutedText = dark ? 'text-[#999]' : 'text-gray-400';
     const labelCls = `block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`;
 
     const saveProfile = () => {

@@ -122,7 +122,7 @@ export default function AdminDashboard() {
                     <Shield className="w-8 h-8 text-orange-500" />
                     <div>
                         <h2 className="text-3xl font-black font-mono uppercase tracking-widest text-white">Admin Panel</h2>
-                        <p className="text-[#555] font-mono text-xs tracking-widest mt-0.5">System Overview</p>
+                        <p className="text-[#888] font-mono text-xs tracking-widest mt-0.5">System Overview</p>
                     </div>
                 </div>
                 <button onClick={fetchAll} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-[#222] text-gray-400 hover:text-white text-sm transition-all">
@@ -138,10 +138,10 @@ export default function AdminDashboard() {
                     { label: 'Public Devices', value: liveDevices, color: '#a855f7', icon: <Radio className="w-5 h-5" /> },
                     { label: 'Pending Approval', value: pendingUsers, color: '#eab308', icon: <Shield className="w-5 h-5" /> },
                 ].map(stat => (
-                    <div key={stat.label} className="bg-[#0A0A0A] border border-[#1a1a1a] rounded-2xl p-5">
+                    <div key={stat.label} className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-2xl p-5">
                         <div className="flex items-center gap-2 mb-2" style={{ color: stat.color }}>{stat.icon}</div>
                         <div className="text-3xl font-black font-mono" style={{ color: stat.color }}>{stat.value}</div>
-                        <div className="text-[#444] font-mono text-xs uppercase tracking-widest mt-1">{stat.label}</div>
+                        <div className="text-[#999] font-mono text-xs uppercase tracking-widest mt-1">{stat.label}</div>
                     </div>
                 ))}
             </div>
@@ -164,14 +164,14 @@ export default function AdminDashboard() {
                 <div className="space-y-3">
                     {devices.map((device, i) => (
                         <motion.div key={device._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                            className={`bg-[#0A0A0A] border rounded-xl p-4 flex items-center gap-4 transition-all ${device.isLive ? 'border-purple-500/30' : 'border-[#1a1a1a] hover:border-orange-500/20'}`}>
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/10 border border-green-500/30' : 'bg-[#111] border border-[#222]'}`}>
-                                {device.isConnected ? <Wifi className="w-5 h-5 text-green-500" /> : <WifiOff className="w-5 h-5 text-[#333]" />}
+                            className={`bg-[#0e0e0e] border rounded-xl p-4 flex items-center gap-4 transition-all ${device.isLive ? 'border-purple-500/40' : 'border-[#2a2a2a] hover:border-orange-500/30'}`}>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/10 border border-green-500/30' : 'bg-[#181818] border border-[#2a2a2a]'}`}>
+                                {device.isConnected ? <Wifi className="w-5 h-5 text-green-500" /> : <WifiOff className="w-5 h-5 text-[#666]" />}
                             </div>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="text-white font-mono font-bold text-sm truncate">{device.name}</h3>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${device.isConnected ? 'text-green-500 bg-green-500/10 border border-green-500/20' : 'text-[#444] bg-[#111] border border-[#222]'}`}>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${device.isConnected ? 'text-green-400 bg-green-500/10 border border-green-500/20' : 'text-[#888] bg-[#1a1a1a] border border-[#333]'}`}>
                                         {device.isConnected ? 'ONLINE' : 'OFFLINE'}
                                     </span>
                                     {device.isLive && (
@@ -180,14 +180,14 @@ export default function AdminDashboard() {
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-[#444] font-mono text-xs mt-0.5">
-                                    {device.deviceId} · Owner: <span className="text-orange-500/70">{device.owner?.username || 'unknown'}</span> · {device.pins?.length || 0} pins
+                                <p className="text-[#888] font-mono text-xs mt-0.5">
+                                    {device.deviceId} · Owner: <span className="text-orange-400">{device.owner?.username || 'unknown'}</span> · {device.pins?.length || 0} pins
                                 </p>
                             </div>
 
                             {/* Public Toggle */}
                             <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-[10px] font-mono text-[#444] hidden sm:block">PUBLIC</span>
+                                <span className="text-[10px] font-mono text-[#aaa] hidden sm:block">PUBLIC</span>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); toggleLive(device.deviceId); }}
                                     disabled={!!liveLoading[device.deviceId]}
@@ -205,7 +205,7 @@ export default function AdminDashboard() {
                         </motion.div>
                     ))}
                     {devices.length === 0 && (
-                        <div className="text-center py-16 text-[#333] font-mono uppercase tracking-widest">No devices registered</div>
+                        <div className="text-center py-16 text-[#666] font-mono uppercase tracking-widest">No devices registered</div>
                     )}
                 </div>
             ) : tab === 'users' ? (
@@ -220,9 +220,9 @@ export default function AdminDashboard() {
 
                     {users.map((user, i) => (
                         <motion.div key={user._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                            className="bg-[#0A0A0A] border border-[#1a1a1a] rounded-xl p-4 flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${user.role === 'admin' ? 'border-orange-500/30 bg-orange-500/10' : 'border-[#222] bg-[#111]'}`}>
-                                {user.role === 'admin' ? <Shield className="w-5 h-5 text-orange-500" /> : <Users className="w-5 h-5 text-[#444]" />}
+                            className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-xl p-4 flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${user.role === 'admin' ? 'border-orange-500/30 bg-orange-500/10' : 'border-[#2a2a2a] bg-[#181818]'}`}>
+                                {user.role === 'admin' ? <Shield className="w-5 h-5 text-orange-500" /> : <Users className="w-5 h-5 text-[#777]" />}
                             </div>
                             <div className="flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -236,7 +236,7 @@ export default function AdminDashboard() {
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-[#444] font-mono text-xs mt-0.5">
+                                <p className="text-[#888] font-mono text-xs mt-0.5">
                                     {user.isApproved ? '✓ Approved' : '⏳ Awaiting approval'} · {devices.filter(d => d.owner?._id === user._id || d.owner?.toString() === user._id).length} devices
                                 </p>
                             </div>
@@ -257,24 +257,24 @@ export default function AdminDashboard() {
                         </motion.div>
                     ))}
                     {users.length === 0 && (
-                        <div className="text-center py-16 text-[#333] font-mono uppercase tracking-widest">No users found</div>
+                        <div className="text-center py-16 text-[#666] font-mono uppercase tracking-widest">No users found</div>
                     )}
                 </div>
             ) : (
                 /* ── NOTIFICATIONS TAB ── */
                 <div className="max-w-2xl space-y-6">
-                    <div className="bg-[#0A0A0A] border border-orange-500/20 rounded-2xl p-6">
+                    <div className="bg-[#0e0e0e] border border-orange-500/30 rounded-2xl p-6">
                         <div className="flex items-center gap-2 mb-5">
                             <Bell className="w-5 h-5 text-orange-500" />
                             <h3 className="text-white font-mono font-bold text-sm uppercase tracking-widest">Send Push Notification</h3>
                         </div>
-                        <p className="text-[#555] font-mono text-xs mb-5 leading-relaxed">
+                        <p className="text-[#999] font-mono text-xs mb-5 leading-relaxed">
                             Broadcast a message to ALL currently connected users. Use this for important announcements like update rollouts, maintenance windows, or new features.
                         </p>
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-[10px] font-mono uppercase tracking-widest text-[#555] mb-1.5">Notification Type</label>
+                                <label className="block text-[10px] font-mono uppercase tracking-widest text-[#999] mb-1.5">Notification Type</label>
                                 <div className="flex gap-2 flex-wrap">
                                     {[
                                         { key: 'info', label: '📣 Info', color: 'border-blue-500/40 text-blue-400 bg-blue-500/10' },
@@ -290,13 +290,13 @@ export default function AdminDashboard() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-mono uppercase tracking-widest text-[#555] mb-1.5">Title (optional)</label>
+                                <label className="block text-[10px] font-mono uppercase tracking-widest text-[#999] mb-1.5">Title (optional)</label>
                                 <input value={notifTitle} onChange={e => setNotifTitle(e.target.value)}
                                     placeholder="e.g. Update Available"
                                     className="w-full bg-black border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-2.5 text-white font-mono text-sm" />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-mono uppercase tracking-widest text-[#555] mb-1.5">Message *</label>
+                                <label className="block text-[10px] font-mono uppercase tracking-widest text-[#999] mb-1.5">Message *</label>
                                 <textarea value={notifMessage} onChange={e => setNotifMessage(e.target.value)} rows={3}
                                     placeholder="e.g. New update rolled out! Please update your ESP32 code from the device code tab..."
                                     className="w-full bg-black border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-2.5 text-white font-mono text-sm resize-none" />
@@ -309,8 +309,8 @@ export default function AdminDashboard() {
                     </div>
 
                     {/* Quick Templates */}
-                    <div className="bg-[#0A0A0A] border border-[#1a1a1a] rounded-2xl p-5">
-                        <h4 className="text-[#555] font-mono text-xs uppercase tracking-widest mb-3">Quick Templates</h4>
+                    <div className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-2xl p-5">
+                        <h4 className="text-[#999] font-mono text-xs uppercase tracking-widest mb-3">Quick Templates</h4>
                         <div className="space-y-2">
                             {[
                                 { title: 'ESP32 Update', message: '🔄 New update rolled out! Please update your ESP32 code from the device detail page → ESP32 Code tab.', type: 'success' },
@@ -318,9 +318,9 @@ export default function AdminDashboard() {
                                 { title: 'New Feature', message: '🚀 New feature available! Check out the latest updates on your dashboard.', type: 'info' },
                             ].map((t, i) => (
                                 <button key={i} onClick={() => { setNotifTitle(t.title); setNotifMessage(t.message); setNotifType(t.type); }}
-                                    className="w-full text-left p-3 rounded-xl border border-[#1a1a1a] hover:border-orange-500/20 bg-[#111] transition-all">
+                                    className="w-full text-left p-3 rounded-xl border border-[#2a2a2a] hover:border-orange-500/30 bg-[#181818] transition-all">
                                     <p className="text-white font-mono text-xs font-bold">{t.title}</p>
-                                    <p className="text-[#555] font-mono text-xs mt-0.5 leading-relaxed">{t.message}</p>
+                                    <p className="text-[#999] font-mono text-xs mt-0.5 leading-relaxed">{t.message}</p>
                                 </button>
                             ))}
                         </div>
@@ -344,17 +344,17 @@ export default function AdminDashboard() {
 
                             <div className="space-y-4 mb-6">
                                 <div>
-                                    <label className="block text-[10px] font-mono uppercase tracking-widest text-[#555] mb-1.5">Username</label>
+                                    <label className="block text-[10px] font-mono uppercase tracking-widest text-[#999] mb-1.5">Username</label>
                                     <input value={newUsername} onChange={e => setNewUsername(e.target.value)}
                                         placeholder="username" autoFocus
-                                        className="w-full bg-black border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-3 text-white font-mono text-sm" />
+                                        className="w-full bg-[#111] border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-3 text-white placeholder-[#555] font-mono text-sm" />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-mono uppercase tracking-widest text-[#555] mb-1.5">Password</label>
+                                    <label className="block text-[10px] font-mono uppercase tracking-widest text-[#999] mb-1.5">Password</label>
                                     <div className="relative">
                                         <input value={newPassword} onChange={e => setNewPassword(e.target.value)}
                                             type={showNewPass ? 'text' : 'password'} placeholder="min 6 characters"
-                                            className="w-full bg-black border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-3 pr-10 text-white font-mono text-sm" />
+                                            className="w-full bg-[#111] border border-[#333] focus:border-orange-500 outline-none rounded-xl px-4 py-3 pr-10 text-white placeholder-[#555] font-mono text-sm" />
                                         <button onClick={() => setShowNewPass(s => !s)}
                                             className="absolute right-3 top-3.5 text-[#555] hover:text-orange-500">
                                             {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -362,11 +362,11 @@ export default function AdminDashboard() {
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-mono uppercase tracking-widest text-[#555] mb-1.5">Role</label>
+                                    <label className="block text-[10px] font-mono uppercase tracking-widest text-[#999] mb-1.5">Role</label>
                                     <div className="flex gap-2">
                                         {['user', 'admin'].map(r => (
                                             <button key={r} onClick={() => setNewRole(r)}
-                                                className={`flex-1 py-2.5 rounded-xl border font-mono font-bold text-sm transition-all ${newRole === r ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-[#222] text-[#555] hover:border-[#333]'}`}>
+                                                className={`flex-1 py-2.5 rounded-xl border font-mono font-bold text-sm transition-all ${newRole === r ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-[#333] text-[#888] hover:border-[#444]'}`}>
                                                 {r === 'admin' ? '🛡 Admin' : '👤 User'}
                                             </button>
                                         ))}

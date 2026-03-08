@@ -30,12 +30,12 @@ export default function Landing() {
 
                     <h1 className="text-5xl sm:text-7xl font-black tracking-tight mb-6">
                         The Ultimate <br className="sm:hidden" />
-                        <span className="bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 bg-clip-text text-transparent uppercase">
-                            ioiot
+                        <span className="bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 bg-clip-text text-transparent">
+                            IoIoT
                         </span>
                     </h1>
 
-                    <p className={`text-lg sm:text-2xl mb-12 max-w-2xl mx-auto leading-relaxed ${dark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <p className={`text-lg sm:text-2xl mb-12 max-w-2xl mx-auto leading-relaxed ${dark ? 'text-gray-300' : 'text-gray-600'}`}>
                         Connect, configure, cloud-compile, and control your ESP32 hardware directly from the web. Zero setup required.
                     </p>
 
@@ -63,7 +63,7 @@ export default function Landing() {
                                 {f.icon}
                             </div>
                             <h3 className={`text-xl font-bold mb-3 ${dark ? 'text-white' : 'text-gray-900'}`}>{f.title}</h3>
-                            <p className={`leading-relaxed ${dark ? 'text-[#888]' : 'text-gray-500'}`}>{f.desc}</p>
+                            <p className={`leading-relaxed ${dark ? 'text-[#aaa]' : 'text-gray-500'}`}>{f.desc}</p>
                         </div>
                     ))}
                 </motion.div>
@@ -73,7 +73,7 @@ export default function Landing() {
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1, duration: 1 }}
                     className="mt-32 max-w-4xl mx-auto text-center">
                     <Globe className={`w-12 h-12 mx-auto mb-6 opacity-50 ${dark ? 'text-gray-600' : 'text-gray-400'}`} />
-                    <p className={`font-mono text-sm tracking-widest uppercase ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <p className={`font-mono text-sm tracking-widest uppercase ${dark ? 'text-[#888]' : 'text-gray-400'}`}>
                         Powered by Hugging Face & Vercel
                     </p>
                 </motion.div>
@@ -81,7 +81,7 @@ export default function Landing() {
 
             {/* Footer */}
             <footer className={`mt-auto py-8 border-t text-center ${dark ? 'border-[#222] bg-[#050505]' : 'border-gray-200 bg-gray-50'}`}>
-                <p className={`font-mono text-sm ${dark ? 'text-[#666]' : 'text-gray-500'}`}>
+                <p className={`font-mono text-sm ${dark ? 'text-[#888]' : 'text-gray-500'}`}>
                     All rights reserved Adilitix Robotics {new Date().getFullYear()}
                 </p>
             </footer>

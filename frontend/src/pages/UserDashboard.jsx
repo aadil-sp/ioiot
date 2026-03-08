@@ -106,8 +106,8 @@ export default function UserDashboard() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <h2 className="text-3xl font-black font-mono uppercase tracking-widest text-white">My Devices</h2>
-                    <p className="text-[#555] font-mono text-sm mt-1 tracking-widest">
-                        {devices.length} registered · <span className="text-green-500">{onlineCount} online</span>
+                    <p className="text-[#999] font-mono text-sm mt-1 tracking-widest">
+                        {devices.length} registered · <span className="text-green-400">{onlineCount} online</span>
                     </p>
                 </div>
                 <div className="flex gap-3">
@@ -259,9 +259,9 @@ export default function UserDashboard() {
             ) : devices.length === 0 ? (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                     className="flex flex-col items-center justify-center h-72 border-2 border-dashed border-[#222] rounded-3xl text-center">
-                    <Cpu className="w-14 h-14 text-[#333] mb-4" />
-                    <p className="text-[#444] font-mono uppercase tracking-widest text-sm">No devices yet</p>
-                    <p className="text-[#333] font-mono text-xs mt-1">Click "Add Device" to get started</p>
+                    <Cpu className="w-14 h-14 text-[#555] mb-4" />
+                    <p className="text-[#777] font-mono uppercase tracking-widest text-sm">No devices yet</p>
+                    <p className="text-[#666] font-mono text-xs mt-1">Click "Add Device" to get started</p>
                     <button onClick={openCreate} className="mt-6 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-500 font-bold text-sm hover:bg-orange-500 hover:text-black transition-all">
                         <Plus className="w-4 h-4" /> Add your first device
                     </button>
@@ -283,11 +283,11 @@ export default function UserDashboard() {
                                     <div>
                                         <h3 className="text-white font-bold font-mono text-sm">{device.name}</h3>
                                         <div className="flex items-center gap-1.5 mt-0.5">
-                                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase ${device.mode === 'serial' ? 'text-blue-400/70 border-blue-400/20' : device.mode === 'usb' ? 'text-green-400/70 border-green-400/20' : 'text-orange-500/70 border-orange-500/20'}`}>
+                                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase ${device.mode === 'serial' ? 'text-blue-400/90 border-blue-400/30' : device.mode === 'usb' ? 'text-green-400/90 border-green-400/30' : 'text-orange-400/90 border-orange-400/30'}`}>
                                                 {getModeLabel(device)}
                                             </span>
                                             {device.board && (
-                                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[#222] text-[#555]">
+                                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[#333] text-[#888]">
                                                     {getBoardIcon(device.board)} {device.board.toUpperCase()}
                                                 </span>
                                             )}
@@ -309,10 +309,10 @@ export default function UserDashboard() {
 
                             <div className="flex items-center gap-2">
                                 <span className={`w-2 h-2 rounded-full ${device.isConnected ? 'bg-green-500 animate-pulse shadow-[0_0_6px_#22c55e]' : 'bg-[#333]'}`}></span>
-                                <span className={`text-xs font-mono uppercase tracking-widest ${device.isConnected ? 'text-green-500' : 'text-[#444]'}`}>
+                                <span className={`text-xs font-mono uppercase tracking-widest ${device.isConnected ? 'text-green-400' : 'text-[#777]'}`}>
                                     {device.mode === 'usb' ? 'USB Direct' : device.isConnected ? 'Online' : 'Offline'}
                                 </span>
-                                <span className="ml-auto text-[#333] text-xs font-mono">{device.pins?.length || 0} pins</span>
+                                <span className="ml-auto text-[#666] text-xs font-mono">{device.pins?.length || 0} pins</span>
                             </div>
 
                             {device.pins?.length > 0 && (
@@ -331,7 +331,7 @@ export default function UserDashboard() {
                             )}
 
                             <div className="flex items-center justify-between pt-2 border-t border-[#111]">
-                                <span className="text-[#444] text-xs font-mono flex items-center gap-1">
+                                <span className="text-[#888] text-xs font-mono flex items-center gap-1">
                                     <Zap className="w-3 h-3" /> {device.pins?.filter(p => p.mode === 'OUTPUT').length || 0} outputs
                                 </span>
                                 <ChevronRight className="w-4 h-4 text-[#333] group-hover:text-orange-500 transition-all" />

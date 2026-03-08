@@ -61,10 +61,10 @@ function NavContent({ auth, setAuth, dark, toggle, mobile, onClose }) {
           )}
 
           {/* Username chip — hide on very small */}
-          <div className={`hidden lg:flex items-center gap-2 text-sm font-mono ${dark ? 'text-gray-400' : 'text-gray-600'}`}>
+          <div className={`hidden lg:flex items-center gap-2 text-sm font-mono ${dark ? 'text-[#aaa]' : 'text-gray-600'}`}>
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
             <span>{displayName || username}</span>
-            {role === 'admin' && <span className="text-orange-500 text-xs border border-orange-500/30 px-2 py-0.5 rounded">ADMIN</span>}
+            {role === 'admin' && <span className="text-orange-500 text-xs border border-orange-500/40 px-2 py-0.5 rounded">ADMIN</span>}
           </div>
 
           <button
