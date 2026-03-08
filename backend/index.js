@@ -218,11 +218,12 @@ app.put('/api/devices/:id', authenticate, async (req, res) => {
         if (ownerIdPut !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
-        const { name, wifiSSID, wifiPassword, mode, isLive } = req.body;
+        const { name, wifiSSID, wifiPassword, mode, isLive, otaEnabled } = req.body;
         if (name !== undefined) device.name = name;
         if (wifiSSID !== undefined) device.wifiSSID = wifiSSID;
         if (wifiPassword !== undefined) device.wifiPassword = wifiPassword;
         if (mode !== undefined) device.mode = mode;
+        if (otaEnabled !== undefined) device.otaEnabled = otaEnabled;
         // isLive can be updated via PUT by admin only
         if (isLive !== undefined && req.user.role === 'admin') device.isLive = isLive;
         await device.save();
@@ -372,6 +373,15 @@ app.get('/api/esp/state', async (req, res) => {
         device.pins.forEach(pin => {
             stateObj[pin.widgetKey] = pin.value;
         });
+
+        // Add OTA info if available
+        if (device.otaEnabled && device.latestFirmware) {
+            stateObj._ota = {
+                url: `${req.protocol}://${req.get('host')}/api/esp/ota/${device.deviceId}`,
+                ver: device.latestFirmware.version
+            };
+        }
+
         res.json(stateObj);
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
@@ -631,6 +641,50 @@ app.post('/api/compile', authenticate, async (req, res) => {
     req.on('close', () => {
         try { child.kill('SIGTERM'); } catch { }
     });
+});
+
+// ─── OTA Firmware Storage ────────────────────────────────────────────────────
+// In a real prod environment, use S3. For this space, we'll store in a local 'firmware' folder.
+const firmwareDir = path.join(__dirname, 'firmware');
+if (!fs.existsSync(firmwareDir)) fs.mkdirSync(firmwareDir);
+
+app.post('/api/devices/:id/firmware', authenticate, async (req, res) => {
+    try {
+        const { binary, version } = req.body; // binary is base64
+        const device = await Device.findOne({ deviceId: req.params.id });
+        if (!device) return res.status(404).json({ error: 'Device not found' });
+
+        const ownerId = (device.owner?._id || device.owner)?.toString();
+        if (ownerId !== req.user.id && req.user.role !== 'admin')
+            return res.status(403).json({ error: 'Unauthorized' });
+
+        const filePath = path.join(firmwareDir, `${device.deviceId}.bin`);
+        fs.writeFileSync(filePath, Buffer.from(binary, 'base64'));
+
+        device.latestFirmware = {
+            version: version || Date.now().toString(),
+            filePath: filePath,
+            uploadedAt: new Date()
+        };
+        await device.save();
+
+        res.json({ message: 'Firmware uploaded successfully', version: device.latestFirmware.version });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Firmware upload failed' });
+    }
+});
+
+app.get('/api/esp/ota/:id', async (req, res) => {
+    try {
+        const device = await Device.findOne({ deviceId: req.params.id });
+        if (!device || !device.latestFirmware) return res.status(404).send('No firmware');
+
+        // Simple security: check token in query if needed, but for now we rely on the unique deviceId
+        res.sendFile(device.latestFirmware.filePath);
+    } catch (err) {
+        res.status(500).send('Server error');
+    }
 });
 
 const PORT = process.env.PORT || 5000;

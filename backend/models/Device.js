@@ -28,11 +28,18 @@ const deviceSchema = new mongoose.Schema({
     board: { type: String, default: 'esp32' },
     // Device mode: 'wifi'=cloud poll, 'serial'=Bluetooth chars, 'usb'=direct USB serial (Arduino)
     mode: { type: String, default: 'wifi' },
+    otaEnabled: { type: Boolean, default: false },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     pins: [pinSchema],
     // WiFi credentials stored per-device for code generation
     wifiSSID: { type: String, default: '' },
     wifiPassword: { type: String, default: '' },
+    // Latest firmware for OTA
+    latestFirmware: {
+        version: String,
+        filePath: String,
+        uploadedAt: Date
+    },
     // Legacy fields kept for backward compatibility
     state: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
     controls: { type: Array, default: [] },
