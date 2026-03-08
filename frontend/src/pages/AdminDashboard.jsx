@@ -75,8 +75,15 @@ export default function AdminDashboard() {
         try {
             const res = await axios.post(`${API}/api/devices/${deviceId}/live`, {}, { headers });
             setDevices(prev => prev.map(d => d.deviceId === deviceId ? { ...d, isLive: res.data.isLive } : d));
-        } catch (err) { console.error(err); }
-        finally { setLiveLoading(prev => ({ ...prev, [deviceId]: false })); }
+        } catch (err) {
+            console.error('toggleLive error:', err);
+            const errMsg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Unknown error';
+            alert(`Failed to toggle Live/Public: ${errMsg}`);
+            // Refresh devices to sync UI state
+            fetchAll();
+        } finally {
+            setLiveLoading(prev => ({ ...prev, [deviceId]: false }));
+        }
     };
 
     const createUser = async () => {

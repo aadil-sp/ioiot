@@ -24,10 +24,10 @@ const deviceSchema = new mongoose.Schema({
         default: () => crypto.randomBytes(16).toString('hex'),
         unique: true
     },
-    // board: which physical board this is
-    board: { type: String, enum: ['esp32', 'esp8266', 'uno', 'nano', 'mega'], default: 'esp32' },
+    // board: which physical board this is (no enum — flexible for new boards)
+    board: { type: String, default: 'esp32' },
     // Device mode: 'wifi'=cloud poll, 'serial'=Bluetooth chars, 'usb'=direct USB serial (Arduino)
-    mode: { type: String, enum: ['wifi', 'serial', 'usb'], default: 'wifi' },
+    mode: { type: String, default: 'wifi' },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     pins: [pinSchema],
     // WiFi credentials stored per-device for code generation

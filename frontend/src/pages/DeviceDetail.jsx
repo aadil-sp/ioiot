@@ -219,8 +219,10 @@ export default function DeviceDetail() {
     };
 
     const addPinFromPreset = (preset) => {
+        const isArduinoBoard = ['uno', 'nano', 'mega'].includes(device?.board);
+        const gpioList = isArduinoBoard ? ARDUINO_GPIOS : COMMON_GPIOS;
         const usedPins = editingPins.map(p => p.pinNumber);
-        const nextPin = COMMON_GPIOS.find(n => !usedPins.includes(n)) || 99;
+        const nextPin = gpioList.find(n => !usedPins.includes(n)) || 2;
         const usedChars = editingPins.map(p => p.commandChar?.toUpperCase()).filter(Boolean);
         const nextChar = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(c => !usedChars.includes(c)) || 'X';
         setEditingPins(prev => [...prev, {
@@ -719,8 +721,8 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                                     <span className={`w-1.5 h-1.5 rounded-full ${device.isConnected ? 'bg-green-500 animate-pulse' : dark ? 'bg-[#333]' : 'bg-gray-300'}`}></span>
                                     {device.isConnected ? 'Online' : 'Offline'}
                                 </span>
-                                <span className={`text-xs px-2 py-0.5 rounded font-mono border ${isSerial ? 'text-blue-400 border-blue-400/20 bg-blue-400/10' : 'text-orange-500 border-orange-500/20 bg-orange-500/10'}`}>
-                                    {isSerial ? 'Bluetooth/Serial' : 'WiFi / Cloud'}
+                                <span className={`text-xs px-2 py-0.5 rounded font-mono border ${isUSB ? 'text-green-400 border-green-500/20 bg-green-500/10' : isSerial ? 'text-blue-400 border-blue-400/20 bg-blue-400/10' : 'text-orange-500 border-orange-500/20 bg-orange-500/10'}`}>
+                                    {isUSB ? 'USB Direct' : isSerial ? 'Bluetooth/Serial' : 'WiFi / Cloud'}
                                 </span>
                             </div>
                         </div>
@@ -731,8 +733,8 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                 </div>
             </div>
 
-            {/* Auth Token Banner */}
-            {!isSerial && (
+            {/* Auth Token Banner — only for WiFi devices */}
+            {!isSerial && !isUSB && (
                 <div className={`mb-4 p-4 border rounded-xl flex flex-col sm:flex-row sm:items-center gap-3 ${card}`}>
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                         <span className={`font-mono text-xs uppercase tracking-widest shrink-0 ${mutedText}`}>Auth Token:</span>
@@ -750,7 +752,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
 
             {/* WiFi Credentials Panel */}
             <AnimatePresence>
-                {showWifi && !isSerial && (
+                {showWifi && !isSerial && !isUSB && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                         className={`mb-4 p-5 border border-orange-500/20 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-3 items-end overflow-hidden ${card}`}>
                         <div>
@@ -908,7 +910,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                         ) : (
                             <div className="space-y-3">
                                 {editingPins.map((pin, idx) => (
-                                    <PinConfigRow key={idx} pin={pin} idx={idx} onUpdate={updatePin} onRemove={removePin} isSerial={isSerial} dark={dark} card={card} inputCls={inputCls} mutedText={mutedText} />
+                                    <PinConfigRow key={idx} pin={pin} idx={idx} onUpdate={updatePin} onRemove={removePin} isSerial={isSerial} dark={dark} card={card} inputCls={inputCls} mutedText={mutedText} board={device.board} />
                                 ))}
                             </div>
                         )}
@@ -1267,7 +1269,9 @@ function ControlWidget({ pin, isSerial, onControl, dark }) {
 }
 
 // ─── Pin Config Row ────────────────────────────────────────────────────────────
-function PinConfigRow({ pin, idx, onUpdate, onRemove, isSerial, dark, card, inputCls, mutedText }) {
+function PinConfigRow({ pin, idx, onUpdate, onRemove, isSerial, dark, card, inputCls, mutedText, board }) {
+    const isArduinoBoard = ['uno', 'nano', 'mega'].includes(board);
+    const gpioList = isArduinoBoard ? ARDUINO_GPIOS : COMMON_GPIOS;
     const preset = HARDWARE_PRESETS.find(p => p.id === pin.hardwareType);
 
     return (
@@ -1295,7 +1299,7 @@ function PinConfigRow({ pin, idx, onUpdate, onRemove, isSerial, dark, card, inpu
                     <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1 ${mutedText}`}>GPIO Pin</label>
                     <select value={pin.pinNumber} onChange={e => onUpdate(idx, 'pinNumber', Number(e.target.value))}
                         className={`w-full border outline-none rounded-lg px-2 py-1.5 font-mono text-xs transition-colors ${inputCls}`}>
-                        {COMMON_GPIOS.map(n => <option key={n} value={n}>GPIO {n}</option>)}
+                        {gpioList.map(n => <option key={n} value={n}>{isArduinoBoard ? `Pin ${n}` : `GPIO ${n}`}</option>)}
                     </select>
                 </div>
                 {isSerial ? (

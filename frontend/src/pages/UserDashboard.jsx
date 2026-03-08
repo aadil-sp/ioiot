@@ -73,7 +73,8 @@ export default function UserDashboard() {
             setDevices(prev => [res.data, ...prev]);
             setShowCreate(false);
         } catch (err) {
-            alert('Failed to create device');
+            const detail = err.response?.data?.detail || err.response?.data?.error || err.message || '';
+            alert(`Failed to create device${detail ? ': ' + detail : ''}`);
         } finally { setCreating(false); }
     };
 
@@ -190,9 +191,8 @@ export default function UserDashboard() {
                                         </h3>
                                     </div>
 
-                                    {/* Board selection */}
                                     <label className="block text-xs text-[#555] font-mono uppercase tracking-widest mb-2">Board</label>
-                                    <div className="grid grid-cols-2 gap-2 mb-5">
+                                    <div className={`grid gap-2 mb-5 ${platform === 'arduino' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                                         {BOARDS[platform].map(b => (
                                             <button key={b.id} onClick={() => setSelectedBoard(b.id)}
                                                 className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${selectedBoard === b.id

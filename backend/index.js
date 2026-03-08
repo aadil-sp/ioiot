@@ -190,6 +190,7 @@ app.get('/api/devices', authenticate, async (req, res) => {
 app.post('/api/devices', authenticate, async (req, res) => {
     try {
         const { name, mode, board } = req.body;
+        console.log('Creating device:', { name, mode, board, user: req.user.id });
         const deviceId = `device-${crypto.randomBytes(4).toString('hex')}`;
         const device = await Device.create({
             deviceId,
@@ -200,10 +201,11 @@ app.post('/api/devices', authenticate, async (req, res) => {
             pins: [],
             state: {}
         });
+        console.log('Device created:', device.deviceId);
         res.status(201).json(device);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to create device' });
+        console.error('Create device error:', err.message, err.name);
+        res.status(500).json({ error: 'Failed to create device', detail: err.message });
     }
 });
 
@@ -221,6 +223,7 @@ app.put('/api/devices/:id', authenticate, async (req, res) => {
         if (wifiSSID !== undefined) device.wifiSSID = wifiSSID;
         if (wifiPassword !== undefined) device.wifiPassword = wifiPassword;
         if (mode !== undefined) device.mode = mode;
+        // isLive can be updated via PUT by admin only
         if (isLive !== undefined && req.user.role === 'admin') device.isLive = isLive;
         await device.save();
         res.json(device);
@@ -230,17 +233,20 @@ app.put('/api/devices/:id', authenticate, async (req, res) => {
     }
 });
 
-// Admin toggle device live status
+// Admin toggle device live/public status
 app.post('/api/devices/:id/live', authenticate, requireAdmin, async (req, res) => {
     try {
+        console.log('Toggle live for device:', req.params.id, 'by admin:', req.user.id);
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
         device.isLive = !device.isLive;
         await device.save();
+        console.log('Device', device.deviceId, 'isLive now:', device.isLive);
         io.emit('deviceLiveUpdate', { deviceId: device.deviceId, isLive: device.isLive });
         res.json({ isLive: device.isLive });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to toggle live status' });
+        console.error('Toggle live error:', err);
+        res.status(500).json({ error: 'Failed to toggle live status', detail: err.message });
     }
 });
 
