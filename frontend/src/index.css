@@ -2,12 +2,16 @@
 
 @layer base {
   body {
-    @apply bg-[#050505] text-gray-100 font-sans antialiased selection:bg-orange-500/30;
+    /* Slightly lighter than pitch black for better contrast and depth */
+    @apply bg-[#0d0d12] text-gray-100 font-sans antialiased selection:bg-orange-500/30;
+    background-image: radial-gradient(circle at 50% -20%, #1e1e2d 0%, #0d0d12 70%);
+    background-attachment: fixed;
   }
 }
 
 .glass-panel {
-  @apply bg-[#111111]/80 backdrop-blur-xl border border-orange-500/20 shadow-[0_4px_30px_#f973161a];
+  /* Increased opacity and border luminance */
+  @apply bg-[#1a1a24]/90 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0, 0, 0, 0.4)];
 }
 
 /* Custom Webkit Scrollbar */

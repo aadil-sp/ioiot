@@ -146,11 +146,11 @@ export default function AdminDashboard() {
                 <div className="flex items-center gap-3">
                     <Shield className="w-8 h-8 text-orange-500" />
                     <div>
-                        <h2 className="text-3xl font-black font-mono uppercase tracking-widest text-white">Admin Panel</h2>
-                        <p className="text-[#888] font-mono text-xs tracking-widest mt-0.5">System Overview</p>
+                        <h1 className="text-3xl font-black font-mono uppercase tracking-widest text-white">Admin Panel</h1>
+                        <p className="text-gray-400 font-mono text-xs tracking-widest mt-0.5">System Overview</p>
                     </div>
                 </div>
-                <button onClick={fetchAll} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-[#222] text-gray-400 hover:text-white text-sm transition-all">
+                <button onClick={fetchAll} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e1e1e] border border-[#333] text-gray-300 hover:text-white text-sm transition-all shadow-md">
                     <RefreshCw className="w-4 h-4" /> Refresh
                 </button>
             </div>
@@ -163,19 +163,19 @@ export default function AdminDashboard() {
                     { label: 'Public Devices', value: liveDevices, color: '#a855f7', icon: <Radio className="w-5 h-5" /> },
                     { label: 'Pending Approval', value: pendingUsers, color: '#eab308', icon: <Shield className="w-5 h-5" /> },
                 ].map(stat => (
-                    <div key={stat.label} className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-2xl p-5">
+                    <div key={stat.label} className="bg-[#18181b] border border-[#2a2a35] rounded-2xl p-5 shadow-lg shadow-black/20">
                         <div className="flex items-center gap-2 mb-2" style={{ color: stat.color }}>{stat.icon}</div>
                         <div className="text-3xl font-black font-mono" style={{ color: stat.color }}>{stat.value}</div>
-                        <div className="text-[#999] font-mono text-xs uppercase tracking-widest mt-1">{stat.label}</div>
+                        <div className="text-gray-400 font-mono text-xs uppercase tracking-widest mt-1">{stat.label}</div>
                     </div>
                 ))}
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 p-1 bg-[#0A0A0A] border border-[#1a1a1a] rounded-xl mb-6 w-fit">
+            <div className="flex gap-1 p-1 bg-[#16161a] border border-[#2a2a2a] rounded-xl mb-6 w-fit">
                 {TABS.map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
-                        className={`flex items-center gap-1.5 px-5 py-2 rounded-lg font-mono font-bold text-sm transition-all ${tab === t.key ? 'bg-orange-500 text-black' : 'text-[#555] hover:text-white'}`}>
+                        className={`flex items-center gap-1.5 px-5 py-2 rounded-lg font-mono font-bold text-sm transition-all ${tab === t.key ? 'bg-orange-500 text-black' : 'text-gray-500 hover:text-white'}`}>
                         {t.icon}{t.label}
                     </button>
                 ))}
@@ -189,23 +189,23 @@ export default function AdminDashboard() {
                 <div className="space-y-3">
                     {devices.map((device, i) => (
                         <motion.div key={device._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                            className={`bg-[#0e0e0e] border rounded-xl p-4 flex items-center gap-4 transition-all ${device.isLive ? 'border-purple-500/40' : 'border-[#2a2a2a] hover:border-orange-500/30'}`}>
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/10 border border-green-500/30' : 'bg-[#181818] border border-[#2a2a2a]'}`}>
-                                {device.isConnected ? <Wifi className="w-5 h-5 text-green-500" /> : <WifiOff className="w-5 h-5 text-[#666]" />}
+                            className={`bg-[#18181b] border rounded-xl p-4 flex items-center gap-4 transition-all shadow-md ${device.isLive ? 'border-purple-500/50 bg-[#1c1c24]' : 'border-[#333] hover:border-orange-500/50'}`}>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/15 border border-green-500/40' : 'bg-[#222] border border-[#333]'}`}>
+                                {device.isConnected ? <Wifi className="w-5 h-5 text-green-500" /> : <WifiOff className="w-5 h-5 text-gray-500" />}
                             </div>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="text-white font-mono font-bold text-sm truncate">{device.name}</h3>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${device.isConnected ? 'text-green-400 bg-green-500/10 border border-green-500/20' : 'text-[#888] bg-[#1a1a1a] border border-[#333]'}`}>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${device.isConnected ? 'text-green-400 bg-green-500/15 border border-green-500/30' : 'text-[#aaa] bg-[#222] border border-[#444]'}`}>
                                         {device.isConnected ? 'ONLINE' : 'OFFLINE'}
                                     </span>
                                     {device.isLive && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded font-mono text-purple-400 bg-purple-500/10 border border-purple-500/20 flex items-center gap-1">
+                                        <span className="text-[10px] px-2 py-0.5 rounded font-mono text-purple-400 bg-purple-500/15 border border-purple-500/30 flex items-center gap-1">
                                             <Radio className="w-2.5 h-2.5" /> PUBLIC
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-[#888] font-mono text-xs mt-0.5">
+                                <p className="text-gray-400 font-mono text-xs mt-0.5">
                                     {device.deviceId} · Owner: <span className="text-orange-400">{device.owner?.username || 'unknown'}</span> · {device.pins?.length || 0} pins
                                 </p>
                             </div>
@@ -224,13 +224,13 @@ export default function AdminDashboard() {
                             </div>
 
                             <button onClick={() => navigate(`/device/${device.deviceId}`)}
-                                className="flex items-center gap-1 text-xs text-[#555] hover:text-orange-500 font-mono transition-all shrink-0">
+                                className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-500 font-mono transition-all shrink-0">
                                 <ExternalLink className="w-3.5 h-3.5" /> View
                             </button>
                         </motion.div>
                     ))}
                     {devices.length === 0 && (
-                        <div className="text-center py-16 text-[#666] font-mono uppercase tracking-widest">No devices registered</div>
+                        <div className="text-center py-16 text-gray-500 font-mono uppercase tracking-widest">No devices registered</div>
                     )}
                 </div>
             ) : tab === 'users' ? (

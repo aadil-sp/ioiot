@@ -106,13 +106,13 @@ export default function UserDashboard() {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
-                    <h2 className="text-3xl font-black font-mono uppercase tracking-widest text-white">My Devices</h2>
-                    <p className="text-[#999] font-mono text-sm mt-1 tracking-widest">
+                    <h1 className="text-3xl font-black font-mono uppercase tracking-widest text-white">My Devices</h1>
+                    <p className="text-gray-400 font-mono text-sm mt-1 tracking-widest">
                         {devices.length} registered · <span className="text-green-400">{onlineCount} online</span>
                     </p>
                 </div>
                 <div className="flex gap-3">
-                    <button onClick={fetchDevices} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-[#222] text-gray-400 hover:text-white transition-all text-sm">
+                    <button onClick={fetchDevices} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e1e1e] border border-[#333] text-gray-300 hover:text-white transition-all text-sm shadow-md">
                         <RefreshCw className="w-4 h-4" /> Refresh
                     </button>
                     <button onClick={openCreate} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 text-black font-bold text-sm hover:bg-orange-400 transition-all shadow-[0_0_20px_#f9731655]">
@@ -125,9 +125,10 @@ export default function UserDashboard() {
             <AnimatePresence>
                 {showCreate && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
                         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-[#0A0A0A] border border-orange-500/30 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
+                            className="bg-[#18181b] border border-orange-500/30 rounded-2xl p-8 w-full max-w-lg shadow-2xl relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-red-600"></div>
 
                             {/* Step indicator */}
                             <div className="flex items-center gap-2 mb-6">
