@@ -491,6 +491,7 @@ const char* VERSION    = "${Date.now()}"; // Used for OTA tracking
 // ── Global Objects ─────────────────────────────────────────────
 ${isESP8266 ? 'WiFiClient client;' : 'WiFiClientSecure client;'}
 HTTPClient http;
+${device.otaEnabled && !isESP8266 ? 'HTTPUpdate httpUpdate;' : ''}
 
 // ── Pin Definitions ────────────────────────────────────────────
 ${pinDefs}
@@ -538,6 +539,7 @@ ${wifiPower}
     
     // Warm up the connection
     http.setReuse(true);
+    http.setTimeout(2000);
   } else {
     Serial.println("\\n\u2717 WiFi failed. Restarting...");
     ESP.restart();
@@ -550,7 +552,6 @@ void loop() {
   // Poll server for state
   http.begin(client, SERVER_URL);
   http.addHeader("x-auth-token", AUTH_TOKEN);
-  http.setTimeout(1000); // 1s timeout to prevent hanging
   int code = http.GET();
 
   if (code == 200) {
@@ -570,7 +571,7 @@ ${device.otaEnabled ? `
       }` : ''}
     }
   }
-  http.end(); // Keep-alive handled by client reuse
+  http.end();
   delay(100);
 }`;
     };
