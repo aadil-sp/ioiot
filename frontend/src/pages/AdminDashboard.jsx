@@ -135,7 +135,7 @@ export default function AdminDashboard() {
                 {[
                     { label: 'Total Devices', value: devices.length, color: '#f97316', icon: <Cpu className="w-5 h-5" /> },
                     { label: 'Online Now', value: onlineDevices, color: '#22c55e', icon: <Wifi className="w-5 h-5" /> },
-                    { label: 'Live / Public', value: liveDevices, color: '#a855f7', icon: <Radio className="w-5 h-5" /> },
+                    { label: 'Public Devices', value: liveDevices, color: '#a855f7', icon: <Radio className="w-5 h-5" /> },
                     { label: 'Pending Approval', value: pendingUsers, color: '#eab308', icon: <Shield className="w-5 h-5" /> },
                 ].map(stat => (
                     <div key={stat.label} className="bg-[#0A0A0A] border border-[#1a1a1a] rounded-2xl p-5">
@@ -176,7 +176,7 @@ export default function AdminDashboard() {
                                     </span>
                                     {device.isLive && (
                                         <span className="text-[10px] px-2 py-0.5 rounded font-mono text-purple-400 bg-purple-500/10 border border-purple-500/20 flex items-center gap-1">
-                                            <Radio className="w-2.5 h-2.5" /> LIVE
+                                            <Radio className="w-2.5 h-2.5" /> PUBLIC
                                         </span>
                                     )}
                                 </div>
@@ -185,13 +185,13 @@ export default function AdminDashboard() {
                                 </p>
                             </div>
 
-                            {/* Live Toggle */}
+                            {/* Public Toggle */}
                             <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-[10px] font-mono text-[#444] hidden sm:block">LIVE</span>
+                                <span className="text-[10px] font-mono text-[#444] hidden sm:block">PUBLIC</span>
                                 <button
-                                    onClick={() => toggleLive(device.deviceId)}
-                                    disabled={liveLoading[device.deviceId]}
-                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-50 ${device.isLive ? 'bg-purple-500' : 'bg-[#222]'}`}
+                                    onClick={(e) => { e.stopPropagation(); toggleLive(device.deviceId); }}
+                                    disabled={!!liveLoading[device.deviceId]}
+                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-50 cursor-pointer ${device.isLive ? 'bg-purple-500' : 'bg-[#222]'}`}
                                     title={device.isLive ? 'Remove from public view' : 'Make visible to all users'}
                                 >
                                     <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${device.isLive ? 'left-5' : 'left-0.5'}`} />

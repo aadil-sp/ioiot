@@ -5,9 +5,10 @@ const pinSchema = new mongoose.Schema({
     pinNumber: { type: Number, required: true },
     label: { type: String, required: true, default: 'New Pin' },
     mode: { type: String, enum: ['OUTPUT', 'INPUT', 'INPUT_PULLUP'], default: 'OUTPUT' },
-    type: { type: String, enum: ['digital', 'pwm', 'analog_input'], default: 'digital' },
+    type: { type: String, enum: ['digital', 'pwm', 'analog_input', 'servo'], default: 'digital' },
     widgetType: { type: String, enum: ['toggle', 'slider', 'button', 'value_display', 'servo_slider'], default: 'toggle' },
     widgetKey: { type: String, required: true },
+    hardwareType: { type: String, default: '' }, // e.g. 'led', 'servo', 'relay', etc.
     commandChar: { type: String, default: '' }, // Single char the ESP listens for e.g. 'G'
     value: { type: mongoose.Schema.Types.Mixed, default: false },
     min: { type: Number, default: 0 },

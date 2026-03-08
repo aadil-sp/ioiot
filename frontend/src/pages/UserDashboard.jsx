@@ -293,7 +293,7 @@ export default function UserDashboard() {
                                             )}
                                             {device.isLive && (
                                                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border text-purple-400/70 border-purple-400/20 flex items-center gap-1">
-                                                    <Radio className="w-2.5 h-2.5" />LIVE
+                                                    <Radio className="w-2.5 h-2.5" />PUBLIC
                                                 </span>
                                             )}
                                         </div>
