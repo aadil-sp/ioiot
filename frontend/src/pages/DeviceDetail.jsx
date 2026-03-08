@@ -467,6 +467,7 @@ ${commandCases || '      // Add pins in Pin Config tab'}
             return '';
         }).filter(Boolean).join('\n');
 
+        const fastConnectLib = isESP8266 ? '' : '#include <Preferences.h>\nPreferences prefs;';
         const wifiLib = isESP8266 ? '#include <ESP8266WiFi.h>\n#include <ESP8266HTTPClient.h>' : '#include <WiFi.h>\n#include <HTTPClient.h>\n#include "esp_wifi.h"';
         const otaLib = device.otaEnabled && !isESP8266 ? '#include <HTTPUpdate.h>\n' : '';
         const wifiPower = isESP8266 ? '  WiFi.setOutputPower(10);' : '  esp_wifi_set_max_tx_power(34);';
@@ -474,11 +475,12 @@ ${commandCases || '      // Add pins in Pin Config tab'}
 
         return `// ================================================================
 // ${device.name} — IoIoT WiFi Cloud Mode (${boardName})
-// Polls dashboard every 100ms for sub-200ms response time.
+// Optimized for Fast Connect (stores BSSID/Channel in NVS)
 // ================================================================
 
 ${servoIncludes}${wifiLib}
-${otaLib}#include <ArduinoJson.h>
+${otaLib}${fastConnectLib}
+#include <ArduinoJson.h>
 
 const char* ssid      = "${ssid}";
 const char* password  = "${pass}";
@@ -499,15 +501,39 @@ void setup() {
 ${setupPins}
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-${wifiPower}
   Serial.print("Connecting to WiFi");
+
+  ${!isESP8266 ? `
+  // --- FAST CONNECT (ESP32) ---
+  prefs.begin("wifi-config", false);
+  int ch = prefs.getInt("ch", 0);
+  uint8_t bssid[6];
+  if (ch > 0 && prefs.getBytes("bssid", bssid, 6) == 6) {
+    Serial.print(" (Instant Connect Mode)");
+    WiFi.begin(ssid, password, ch, bssid);
+  } else {
+    WiFi.begin(ssid, password);
+  }
+  ` : 'WiFi.begin(ssid, password);'}
+
+${wifiPower}
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries++ < 40) {
     delay(500); Serial.print(".");
+    if (tries == 10 && ch > 0) { // If fast connect fails, try normal
+      WiFi.begin(ssid, password);
+      Serial.print(" (Retrying normal scan)");
+    }
   }
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\\n\u2713 Connected! IP: " + WiFi.localIP().toString());
+    ${!isESP8266 ? `
+    // Store connection details for next boot
+    prefs.putInt("ch", WiFi.channel());
+    prefs.putBytes("bssid", WiFi.BSSID(), 6);
+    prefs.end();
+    ` : ''}
   } else {
     Serial.println("\\n\u2717 WiFi failed. Restarting...");
     ESP.restart();
