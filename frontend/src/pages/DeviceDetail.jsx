@@ -468,7 +468,7 @@ ${commandCases || '      // Add pins in Pin Config tab'}
         }).filter(Boolean).join('\n');
 
         const fastConnectLib = isESP8266 ? '' : '#include <Preferences.h>\nPreferences prefs;';
-        const wifiLib = isESP8266 ? '#include <ESP8266WiFi.h>\n#include <ESP8266HTTPClient.h>' : '#include <WiFi.h>\n#include <HTTPClient.h>\n#include "esp_wifi.h"';
+        const wifiLib = isESP8266 ? '#include <ESP8266WiFi.h>\n#include <ESP8266HTTPClient.h>' : '#include <WiFi.h>\n#include <HTTPClient.h>\n#include <WiFiClientSecure.h>\n#include "esp_wifi.h"';
         const otaLib = device.otaEnabled && !isESP8266 ? '#include <HTTPUpdate.h>\n' : '';
         const wifiPower = isESP8266 ? '  WiFi.setOutputPower(10);' : '  esp_wifi_set_max_tx_power(34);';
         const boardName = board === 'esp8266' ? 'ESP8266' : 'ESP32';
@@ -487,6 +487,10 @@ const char* password  = "${pass}";
 const char* AUTH_TOKEN = "${device.authToken}";
 const char* SERVER_URL = "${API || 'https://aadilsp-ioiot-backend.hf.space'}/api/esp/state";
 const char* VERSION    = "${Date.now()}"; // Used for OTA tracking
+
+// ── Global Objects ─────────────────────────────────────────────
+${isESP8266 ? 'WiFiClient client;' : 'WiFiClientSecure client;'}
+HTTPClient http;
 
 // ── Pin Definitions ────────────────────────────────────────────
 ${pinDefs}
@@ -520,20 +524,20 @@ ${wifiPower}
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries++ < 40) {
     delay(500); Serial.print(".");
-    if (tries == 10 && ch > 0) { // If fast connect fails, try normal
-      WiFi.begin(ssid, password);
-      Serial.print(" (Retrying normal scan)");
-    }
+    ${!isESP8266 ? `if (tries == 10 && ch > 0) { WiFi.begin(ssid, password); Serial.print(" (Retrying normal)"); }` : ''}
   }
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\\n\u2713 Connected! IP: " + WiFi.localIP().toString());
     ${!isESP8266 ? `
-    // Store connection details for next boot
+    client.setInsecure(); // Required for HTTPS on ESP32
     prefs.putInt("ch", WiFi.channel());
     prefs.putBytes("bssid", WiFi.BSSID(), 6);
     prefs.end();
     ` : ''}
+    
+    // Warm up the connection
+    http.setReuseConnection(true);
   } else {
     Serial.println("\\n\u2717 WiFi failed. Restarting...");
     ESP.restart();
@@ -543,16 +547,16 @@ ${wifiPower}
 void loop() {
   if (WiFi.status() != WL_CONNECTED) { WiFi.reconnect(); delay(3000); return; }
 
-  HTTPClient http;
-  WiFiClient client;
+  // Poll server for state
   http.begin(client, SERVER_URL);
   http.addHeader("x-auth-token", AUTH_TOKEN);
-  http.setTimeout(2000);
+  http.setTimeout(1000); // 1s timeout to prevent hanging
   int code = http.GET();
 
-  if (code > 0) {
+  if (code == 200) {
+    String payload = http.getString();
     StaticJsonDocument<1024> doc;
-    if (!deserializeJson(doc, http.getString())) {
+    if (!deserializeJson(doc, payload)) {
 ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
 
       // ── Wireless Cloud Update (OTA) ───────────────────────────
@@ -566,7 +570,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
       }
     }
   }
-  http.end();
+  http.end(); // Keep-alive handled by client reuse
   delay(100);
 }`;
     };
