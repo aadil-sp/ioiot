@@ -537,7 +537,7 @@ ${wifiPower}
     ` : ''}
     
     // Warm up the connection
-    http.setReuseConnection(true);
+    http.setReuse(true);
   } else {
     Serial.println("\\n\u2717 WiFi failed. Restarting...");
     ESP.restart();
@@ -558,7 +558,7 @@ void loop() {
     StaticJsonDocument<1024> doc;
     if (!deserializeJson(doc, payload)) {
 ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
-
+${device.otaEnabled ? `
       // ── Wireless Cloud Update (OTA) ───────────────────────────
       if (doc.containsKey("_ota")) {
         String url = doc["_ota"]["url"];
@@ -567,7 +567,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
           Serial.println("OTA Update starting: " + v);
           httpUpdate.update(client, url);
         }
-      }
+      }` : ''}
     }
   }
   http.end(); // Keep-alive handled by client reuse
