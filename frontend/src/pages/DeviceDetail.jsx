@@ -84,8 +84,44 @@ const HARDWARE_PRESETS = [
     },
 ];
 
-const COMMON_GPIOS = [2, 4, 5, 12, 13, 14, 15, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 34, 35, 36, 39];
-const ARDUINO_GPIOS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+const BOARD_PINS = {
+    uno: {
+        all: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+        analog: [14, 15, 16, 17, 18, 19],
+        pwm: [3, 5, 6, 9, 10, 11],
+        getLabel: (n) => n >= 14 ? `Pin A${n - 14}` : `Pin ${n}`
+    },
+    nano: {
+        all: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+        analog: [14, 15, 16, 17, 18, 19, 20, 21],
+        pwm: [3, 5, 6, 9, 10, 11],
+        getLabel: (n) => n >= 14 ? `Pin A${n - 14}` : `Pin ${n}`
+    },
+    mega: {
+        all: Array.from({ length: 68 }, (_, i) => i + 2),
+        analog: Array.from({ length: 16 }, (_, i) => i + 54),
+        pwm: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 44, 45, 46],
+        getLabel: (n) => n >= 54 ? `Pin A${n - 54}` : `Pin ${n}`
+    },
+    esp32: {
+        all: [2, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 34, 35, 36, 39],
+        analog: [32, 33, 34, 35, 36, 39],
+        pwm: [2, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33],
+        getLabel: (n) => `GPIO ${n}`
+    },
+    esp8266: {
+        all: [0, 2, 4, 5, 12, 13, 14, 15, 16, 17],
+        analog: [17],
+        pwm: [0, 2, 4, 5, 12, 13, 14, 15],
+        getLabel: (n) => n === 17 ? 'Pin A0' : `GPIO ${n}`
+    },
+    default: {
+        all: [2, 4, 5, 12, 13, 14, 15, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 34, 35, 36, 39],
+        analog: [32, 33, 34, 35, 36, 39, 14, 15, 16, 17, 18, 19],
+        pwm: [2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15],
+        getLabel: (n) => `GPIO ${n}`
+    }
+};
 
 // Map device board to compile FQBN
 const BOARD_FQBN = {
@@ -219,10 +255,12 @@ export default function DeviceDetail() {
     };
 
     const addPinFromPreset = (preset) => {
-        const isArduinoBoard = ['uno', 'nano', 'mega'].includes(device?.board);
-        const gpioList = isArduinoBoard ? ARDUINO_GPIOS : COMMON_GPIOS;
+        const boardType = device?.board || 'esp32';
+        const config = BOARD_PINS[boardType] || BOARD_PINS.default;
+        const type = preset.defaults?.type;
+        const gpioList = (type === 'analog_input') ? config.analog : (type === 'pwm' || type === 'servo') ? config.pwm : config.all;
         const usedPins = editingPins.map(p => p.pinNumber);
-        const nextPin = gpioList.find(n => !usedPins.includes(n)) || 2;
+        const nextPin = gpioList.find(n => !usedPins.includes(n)) || gpioList[0] || (boardType === 'mega' ? 2 : 13);
         const usedChars = editingPins.map(p => p.commandChar?.toUpperCase()).filter(Boolean);
         const nextChar = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(c => !usedChars.includes(c)) || 'X';
         setEditingPins(prev => [...prev, {
@@ -275,7 +313,6 @@ export default function DeviceDetail() {
         const isSerial = device.mode === 'serial';
         const isUSB = device.mode === 'usb';
 
-        const gpioList = isArduino ? ARDUINO_GPIOS : COMMON_GPIOS;
         const pinMacroFn = (p) => `PIN_${sanitize(p.label)}`;
         const sanitizeFn = (s) => s.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 
@@ -843,7 +880,7 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {device.pins.map(pin => (
-                                    <ControlWidget key={pin.widgetKey} pin={pin} isSerial={isSerial} onControl={sendControl} dark={dark} />
+                                    <ControlWidget key={pin.widgetKey} pin={pin} isSerial={isSerial} onControl={sendControl} dark={dark} board={device?.board} />
                                 ))}
                             </div>
                         )}
@@ -1185,7 +1222,8 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
 }
 
 // ─── Control Widget ────────────────────────────────────────────────────────────
-function ControlWidget({ pin, isSerial, onControl, dark }) {
+function ControlWidget({ pin, isSerial, onControl, dark, board }) {
+    const config = BOARD_PINS[board] || BOARD_PINS.default;
     const isOn = pin.value === true || Number(pin.value) > 0;
     const cardBorder = dark ? '#1a1a1a' : '#e5e7eb';
 
@@ -1203,7 +1241,7 @@ function ControlWidget({ pin, isSerial, onControl, dark }) {
                             </span>
                         )}
                     </div>
-                    <p className={`text-xs font-mono mt-0.5 ${dark ? 'text-[#555]' : 'text-gray-400'}`}>GPIO {pin.pinNumber} · {pin.hardwareType || pin.type}</p>
+                    <p className={`text-xs font-mono mt-0.5 ${dark ? 'text-[#555]' : 'text-gray-400'}`}>{config.getLabel(pin.pinNumber)} · {pin.hardwareType || pin.type}</p>
                 </div>
                 <div className="w-2 h-2 rounded-full mt-1" style={{ backgroundColor: isOn ? pin.color : dark ? '#333' : '#ddd' }}></div>
             </div>
@@ -1269,8 +1307,8 @@ function ControlWidget({ pin, isSerial, onControl, dark }) {
 
 // ─── Pin Config Row ────────────────────────────────────────────────────────────
 function PinConfigRow({ pin, idx, onUpdate, onRemove, isSerial, dark, card, inputCls, mutedText, board }) {
-    const isArduinoBoard = ['uno', 'nano', 'mega'].includes(board);
-    const gpioList = isArduinoBoard ? ARDUINO_GPIOS : COMMON_GPIOS;
+    const config = BOARD_PINS[board] || BOARD_PINS.default;
+    const gpioList = (pin.type === 'analog_input') ? config.analog : (pin.type === 'pwm' || pin.type === 'servo') ? config.pwm : config.all;
     const preset = HARDWARE_PRESETS.find(p => p.id === pin.hardwareType);
 
     return (
@@ -1280,7 +1318,7 @@ function PinConfigRow({ pin, idx, onUpdate, onRemove, isSerial, dark, card, inpu
                 <div className="flex items-center gap-2">
                     <span>{preset?.icon || '📍'}</span>
                     <span className={`text-sm font-bold font-mono ${dark ? 'text-white' : 'text-gray-900'}`}>{preset?.name || pin.hardwareType || 'Custom'}</span>
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${dark ? 'border-[#333] text-[#555]' : 'border-gray-200 text-gray-400'}`}>GPIO {pin.pinNumber}</span>
+                    <span className={`text-[10px] font-mono px-2 py-1 rounded-xl bg-black/40 border ${dark ? 'border-[#333] text-orange-400' : 'border-gray-200 text-gray-400'}`}>{config.getLabel(pin.pinNumber)}</span>
                 </div>
                 <button onClick={() => onRemove(idx)} className="p-1.5 rounded-lg text-red-500/40 hover:text-red-500 hover:bg-red-500/10 transition-all">
                     <Trash2 className="w-4 h-4" />
@@ -1298,7 +1336,7 @@ function PinConfigRow({ pin, idx, onUpdate, onRemove, isSerial, dark, card, inpu
                     <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1 ${mutedText}`}>GPIO Pin</label>
                     <select value={pin.pinNumber} onChange={e => onUpdate(idx, 'pinNumber', Number(e.target.value))}
                         className={`w-full border outline-none rounded-lg px-2 py-1.5 font-mono text-xs transition-colors ${inputCls}`}>
-                        {gpioList.map(n => <option key={n} value={n}>{isArduinoBoard ? `Pin ${n}` : `GPIO ${n}`}</option>)}
+                        {gpioList.map(n => <option key={n} value={n}>{config.getLabel(n)}</option>)}
                     </select>
                 </div>
                 {isSerial ? (
