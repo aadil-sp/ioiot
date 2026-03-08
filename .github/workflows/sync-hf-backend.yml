@@ -14,35 +14,30 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
 
       - name: Push backend to HuggingFace Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Clone the HuggingFace Space
           git clone https://aadilsp:$HF_TOKEN@huggingface.co/spaces/aadilsp/ioiot-backend hf-space
-          
-          # Copy updated backend files over (overwrite everything)
-          cp -r backend/index.js hf-space/
-          cp -r backend/models/ hf-space/models/
-          cp -r backend/middleware/ hf-space/middleware/
+
+          cp backend/index.js hf-space/index.js
+          cp -r backend/models/. hf-space/models/
+          cp -r backend/middleware/. hf-space/middleware/
           cp backend/package.json hf-space/package.json
           cp backend/package-lock.json hf-space/package-lock.json
           cp backend/Dockerfile hf-space/Dockerfile
           cp backend/.dockerignore hf-space/.dockerignore
-          
-          # Commit and push changes
+
           cd hf-space
           git config user.email "github-action@github.com"
           git config user.name "GitHub Action"
-          
-          # Check if there are changes to commit
-          if git diff --quiet && git diff --staged --quiet; then
-            echo "No changes to sync"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to sync — HuggingFace already up to date"
           else
-            git add -A
-            git commit -m "Sync from GitHub: ${{ github.sha }}"
+            git commit -m "Sync from GitHub ${{ github.sha }}"
             git push
-            echo "Successfully pushed to HuggingFace!"
+            echo "Pushed to HuggingFace!"
           fi
