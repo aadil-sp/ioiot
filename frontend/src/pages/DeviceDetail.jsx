@@ -707,18 +707,18 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                 </button>
                 <div className="flex flex-col md:flex-row md:items-center gap-4">
                     <div className="flex items-center gap-4 flex-1">
-                        <div className={`w-14 h-14 rounded-xl flex items-center justify-center border ${serialConnected && isUSB ? 'border-green-500/40 bg-green-500/15' : device.isConnected && !isUSB ? 'border-green-500/40 bg-green-500/15' : dark ? 'border-[#333] bg-[#18181b]' : 'border-gray-200 bg-gray-100'}`}>
+                        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center border-2 ${serialConnected && isUSB ? 'border-green-500/50 bg-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : device.isConnected && !isUSB ? 'border-green-500/50 bg-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : dark ? 'border-[#444] bg-[#2a2a3a]' : 'border-gray-200 bg-gray-100'}`}>
                             {isUSB
-                                ? <Usb className={`w-7 h-7 ${serialConnected ? 'text-green-400' : 'text-gray-500'}`} />
+                                ? <Usb className={`w-8 h-8 ${serialConnected ? 'text-green-400' : 'text-gray-400'}`} />
                                 : isSerial
-                                    ? <Bluetooth className="w-7 h-7 text-blue-400" />
-                                    : device.isConnected ? <Wifi className="w-7 h-7 text-green-500" /> : <WifiOff className={`w-7 h-7 ${dark ? 'text-[#444]' : 'text-gray-300'}`} />}
+                                    ? <Bluetooth className="w-8 h-8 text-blue-400" />
+                                    : device.isConnected ? <Wifi className="w-8 h-8 text-green-400" /> : <WifiOff className={`w-8 h-8 ${dark ? 'text-[#555]' : 'text-gray-300'}`} />}
                         </div>
                         <div>
                             <h2 className={`text-2xl font-black font-mono uppercase tracking-widest ${dark ? 'text-white' : 'text-gray-900'}`}>{device.name}</h2>
                             <div className="flex items-center gap-3 mt-1">
-                                <span className={`flex items-center gap-1.5 text-xs font-mono uppercase tracking-widest ${device.isConnected ? 'text-green-500' : dark ? 'text-gray-500' : 'text-gray-400'}`}>
-                                    <span className={`w-1.5 h-1.5 rounded-full ${device.isConnected ? 'bg-green-500 animate-pulse' : dark ? 'bg-gray-600' : 'bg-gray-300'}`}></span>
+                                <span className={`flex items-center gap-1.5 text-xs font-mono uppercase tracking-[0.2em] font-black ${device.isConnected ? 'text-green-400' : dark ? 'text-gray-400' : 'text-gray-400'}`}>
+                                    <span className={`w-2 h-2 rounded-full ${device.isConnected ? 'bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]' : dark ? 'bg-gray-700' : 'bg-gray-300'}`}></span>
                                     {device.isConnected ? 'Online' : 'Offline'}
                                 </span>
                                 <span className={`text-xs px-2 py-0.5 rounded font-mono border ${isUSB ? 'text-green-400 border-green-500/20 bg-green-500/10' : isSerial ? 'text-blue-400 border-blue-400/20 bg-blue-400/10' : 'text-orange-500 border-orange-500/20 bg-orange-500/10'}`}>
@@ -727,8 +727,8 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                             </div>
                         </div>
                     </div>
-                    <button onClick={fetchDevice} className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm transition-all shadow-sm ${dark ? 'bg-[#1e1e1e] border-[#333] text-gray-300 hover:text-white' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'}`}>
-                        <RefreshCw className="w-4 h-4" />
+                    <button onClick={fetchDevice} className={`flex items-center gap-2 px-6 py-3 rounded-xl border-2 text-sm font-black transition-all shadow-xl ${dark ? 'bg-[#2a2a3a] border-[#444] text-white hover:bg-orange-500 hover:text-black hover:border-orange-500' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'}`}>
+                        <RefreshCw className="w-5 h-5" /> Refresh
                     </button>
                 </div>
             </div>
@@ -788,9 +788,9 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                     { key: 'flash', icon: <MonitorPlay className="w-4 h-4" />, label: 'Flash & Monitor', beta: true },
                 ].map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
-                        className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg font-mono font-bold text-xs sm:text-sm transition-all ${tab === t.key
-                            ? (t.beta ? 'bg-purple-500 text-white shadow-[0_0_15px_#a855f755]' : 'bg-orange-500 text-black shadow-[0_0_15px_#f9731655]')
-                            : dark ? 'text-gray-500 hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-gray-900 hover:bg-black/5'
+                        className={`flex-shrink-0 flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-mono font-black text-xs sm:text-sm transition-all ${tab === t.key
+                            ? (t.beta ? 'bg-purple-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.4)] border-transparent' : 'bg-orange-500 text-black shadow-[0_0_20px_rgba(249,115,22,0.4)] border-transparent')
+                            : dark ? 'text-gray-400 border border-[#3f3f4e] hover:text-white hover:bg-white/5' : 'text-gray-400 hover:text-gray-900 hover:bg-black/5'
                             }`}>
                         {t.icon}
                         <span className="hidden sm:inline">{t.label}</span>
@@ -806,8 +806,8 @@ ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
                 {tab === 'control' && (
                     <motion.div key="control" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                         {device.mode === 'usb' && (
-                            <div className={`mb-4 p-4 rounded-xl border flex items-center justify-between gap-3 ${serialConnected ? 'bg-green-500/5 border-green-500/35' : 'bg-[#18181b] border-[#333]'
-                                } shadow-md`}>
+                            <div className={`mb-6 p-6 rounded-2xl border-2 flex items-center justify-between gap-4 ${serialConnected ? 'bg-green-500/10 border-green-500/50 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : 'bg-[#1e1e2d] border-[#3f3f4e]'
+                                } shadow-2xl`}>
                                 <div className="flex items-center gap-3">
                                     <Usb className={`w-5 h-5 shrink-0 ${serialConnected ? 'text-green-400' : 'text-gray-500'}`} />
                                     <div>

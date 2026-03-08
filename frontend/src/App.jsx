@@ -23,16 +23,16 @@ function NavContent({ auth, setAuth, dark, toggle, mobile, onClose }) {
   const avatarC = localStorage.getItem('avatarColor') || '#f97316';
 
   const navBtn = dark
-    ? 'bg-[#18181b] text-gray-300 border-[#2a2a35] hover:border-orange-500/50 hover:text-white hover:bg-[#1c1c24]'
+    ? 'bg-[#2a2a35] text-white border-[#444] hover:border-orange-500 hover:bg-[#303040] shadow-sm'
     : 'bg-white text-gray-600 border-gray-200 hover:border-orange-400 hover:text-gray-900';
 
   return (
     <>
       {/* Theme Toggle */}
       <button onClick={toggle}
-        className={`p-2 rounded-xl border transition-all ${dark ? 'border-[#333] bg-[#18181b] text-yellow-400 hover:bg-yellow-400/10' : 'border-gray-200 text-orange-600 hover:bg-orange-100'}`}
+        className={`p-2 rounded-xl border transition-all ${dark ? 'border-[#444] bg-[#2a2a35] text-yellow-400 hover:bg-yellow-400/10 hover:border-yellow-400/30' : 'border-gray-200 text-orange-600 hover:bg-orange-100'}`}
         title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
-        {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        {dark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
       </button>
 
       {token && (
@@ -105,8 +105,8 @@ function AppShell({ auth, setAuth, dark, toggle }) {
   const nc = notifColors[notification?.type] || notifColors.info;
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${dark ? 'bg-[#0d0d12] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
-      <header className={`px-4 sm:px-6 py-3 sm:py-4 border-b flex justify-between items-center sticky top-0 z-50 backdrop-blur-xl transition-colors duration-300 ${dark ? 'border-orange-500/30 bg-black/60 shadow-[0_1px_10px_rgba(0,0,0,0.5)]' : 'border-orange-300/40 bg-white/90'}`}>
+    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${dark ? 'bg-[#12121a] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+      <header className={`px-4 sm:px-6 py-4 border-b flex justify-between items-center sticky top-0 z-50 backdrop-blur-2xl transition-colors duration-300 ${dark ? 'border-orange-500/40 bg-[#12121a]/80 shadow-[0_4px_30px_rgba(0,0,0,0.4)]' : 'border-orange-300/40 bg-white/90'}`}>
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 sm:gap-3">
           <img src="/logo.png" alt="ioIoT Logo" className="w-8 h-8 sm:w-10 sm:h-10 object-contain drop-shadow-[0_0_8px_rgba(249,115,22,0.4)]" />

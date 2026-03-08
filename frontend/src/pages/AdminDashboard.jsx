@@ -163,19 +163,19 @@ export default function AdminDashboard() {
                     { label: 'Public Devices', value: liveDevices, color: '#a855f7', icon: <Radio className="w-5 h-5" /> },
                     { label: 'Pending Approval', value: pendingUsers, color: '#eab308', icon: <Shield className="w-5 h-5" /> },
                 ].map(stat => (
-                    <div key={stat.label} className="bg-[#18181b] border border-[#2a2a35] rounded-2xl p-5 shadow-lg shadow-black/20">
-                        <div className="flex items-center gap-2 mb-2" style={{ color: stat.color }}>{stat.icon}</div>
-                        <div className="text-3xl font-black font-mono" style={{ color: stat.color }}>{stat.value}</div>
-                        <div className="text-gray-400 font-mono text-xs uppercase tracking-widest mt-1">{stat.label}</div>
+                    <div key={stat.label} className="bg-[#1e1e2d] border border-[#3f3f4e] rounded-2xl p-6 shadow-xl shadow-black/40 hover:border-orange-500/30 transition-all">
+                        <div className="flex items-center gap-3 mb-2" style={{ color: stat.color }}>{stat.icon}</div>
+                        <div className="text-4xl font-black font-mono" style={{ color: stat.color }}>{stat.value}</div>
+                        <div className="text-gray-300 font-mono text-xs uppercase tracking-[0.2em] font-bold mt-2">{stat.label}</div>
                     </div>
                 ))}
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 p-1 bg-[#16161a] border border-[#2a2a2a] rounded-xl mb-6 w-fit">
+            <div className="flex gap-1 p-1 bg-[#22222d] border border-[#3f3f4e] rounded-xl mb-8 w-fit shadow-inner">
                 {TABS.map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
-                        className={`flex items-center gap-1.5 px-5 py-2 rounded-lg font-mono font-bold text-sm transition-all ${tab === t.key ? 'bg-orange-500 text-black' : 'text-gray-500 hover:text-white'}`}>
+                        className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-mono font-bold text-sm transition-all ${tab === t.key ? 'bg-orange-500 text-black shadow-[0_0_20px_rgba(249,115,22,0.4)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                         {t.icon}{t.label}
                     </button>
                 ))}
@@ -189,23 +189,23 @@ export default function AdminDashboard() {
                 <div className="space-y-3">
                     {devices.map((device, i) => (
                         <motion.div key={device._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                            className={`bg-[#18181b] border rounded-xl p-4 flex items-center gap-4 transition-all shadow-md ${device.isLive ? 'border-purple-500/50 bg-[#1c1c24]' : 'border-[#333] hover:border-orange-500/50'}`}>
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/15 border border-green-500/40' : 'bg-[#222] border border-[#333]'}`}>
-                                {device.isConnected ? <Wifi className="w-5 h-5 text-green-500" /> : <WifiOff className="w-5 h-5 text-gray-500" />}
+                            className={`bg-[#1e1e2d] border rounded-2xl p-5 flex items-center gap-5 transition-all shadow-xl ${device.isLive ? 'border-purple-500/60 bg-[#242435]' : 'border-[#3f3f4e] hover:border-orange-500/50 hover:bg-[#252535]'}`}>
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/20 border border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'bg-[#2a2a3a] border border-[#444]'}`}>
+                                {device.isConnected ? <Wifi className="w-6 h-6 text-green-400" /> : <WifiOff className="w-6 h-6 text-gray-400" />}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <h3 className="text-white font-mono font-bold text-sm truncate">{device.name}</h3>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${device.isConnected ? 'text-green-400 bg-green-500/15 border border-green-500/30' : 'text-[#aaa] bg-[#222] border border-[#444]'}`}>
+                                <div className="flex items-center gap-3 flex-wrap">
+                                    <h3 className="text-white font-mono font-black text-base truncate">{device.name}</h3>
+                                    <span className={`text-[10px] px-3 py-1 rounded-full font-black font-mono tracking-widest ${device.isConnected ? 'text-green-400 bg-green-500/20 border border-green-500/40' : 'text-gray-300 bg-[#333] border border-[#555]'}`}>
                                         {device.isConnected ? 'ONLINE' : 'OFFLINE'}
                                     </span>
                                     {device.isLive && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded font-mono text-purple-400 bg-purple-500/15 border border-purple-500/30 flex items-center gap-1">
-                                            <Radio className="w-2.5 h-2.5" /> PUBLIC
+                                        <span className="text-[10px] px-3 py-1 rounded-full font-black font-mono tracking-widest text-purple-400 bg-purple-500/20 border border-purple-500/40 flex items-center gap-1">
+                                            <Radio className="w-3 h-3" /> PUBLIC
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-gray-400 font-mono text-xs mt-0.5">
+                                <p className="text-gray-300 font-mono text-xs mt-2 font-bold opacity-80">
                                     {device.deviceId} · Owner: <span className="text-orange-400">{device.owner?.username || 'unknown'}</span> · {device.pins?.length || 0} pins
                                 </p>
                             </div>
@@ -224,13 +224,13 @@ export default function AdminDashboard() {
                             </div>
 
                             <button onClick={() => navigate(`/device/${device.deviceId}`)}
-                                className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-500 font-mono transition-all shrink-0">
+                                className="flex items-center gap-2 text-xs text-orange-400 hover:text-white bg-orange-400/10 border border-orange-400/30 rounded-lg px-4 py-2 font-black font-mono transition-all shrink-0">
                                 <ExternalLink className="w-3.5 h-3.5" /> View
                             </button>
                         </motion.div>
                     ))}
                     {devices.length === 0 && (
-                        <div className="text-center py-16 text-gray-500 font-mono uppercase tracking-widest">No devices registered</div>
+                        <div className="text-center py-20 text-gray-300 font-mono uppercase tracking-[0.3em] font-black opacity-40">No devices registered</div>
                     )}
                 </div>
             ) : tab === 'users' ? (

@@ -126,16 +126,16 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
     };
 
     if (loading) return (
-        <div className="bg-[#0A0A0A] border border-orange-500/20 h-96 rounded-3xl flex items-center justify-center flex-col">
-            <div className="w-12 h-12 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin mb-4"></div>
-            <div className="text-orange-500 uppercase tracking-widest font-mono text-sm animate-pulse">ESTABLISHING UPLINK...</div>
+        <div className="bg-[#1e1e2d] border-2 border-orange-500/20 h-96 rounded-3xl flex items-center justify-center flex-col shadow-2xl">
+            <div className="w-16 h-16 border-4 border-orange-500/10 border-t-orange-500 rounded-full animate-spin mb-6"></div>
+            <div className="text-orange-500 uppercase tracking-[0.3em] font-black font-mono text-sm animate-pulse">ESTABLISHING UPLINK...</div>
         </div>
     );
 
     if (!device) return (
-        <div className="bg-[#111] border border-red-500/20 p-8 rounded-3xl text-center">
-            <div className="text-red-500 uppercase tracking-widest font-mono text-xl font-bold">NODE_NOT_FOUND</div>
-            <p className="text-[#666] mt-2 font-mono text-sm">Verify backend configuration.</p>
+        <div className="bg-[#1e1e2d] border-2 border-red-500/30 p-10 rounded-3xl text-center shadow-2xl">
+            <div className="text-red-500 uppercase tracking-[0.3em] font-black font-mono text-xl">NODE_NOT_FOUND</div>
+            <p className="text-gray-400 mt-3 font-mono text-sm font-bold">Verify backend configuration.</p>
         </div>
     );
 
@@ -143,7 +143,7 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
     const heavyControls = isEditing ? tempControls.filter(c => c.category === 'heavy') : (device.controls || []).filter(c => c.category === 'heavy');
 
     return (
-        <div className="bg-[#0A0A0A] rounded-3xl border border-orange-500/20 shadow-[-10px_-10px_30px_#f973160d,10px_10px_30px_#00000080] p-0 relative overflow-hidden group/container">
+        <div className="bg-[#1e1e2d] rounded-3xl border-2 border-[#3f3f4e] shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-0 relative overflow-hidden group/container transition-all">
 
             {/* Decorative Grid Background */}
             <div className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
@@ -152,11 +152,11 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
 
             <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-0 border-b border-[#333]">
                 {/* Status Header */}
-                <div className="md:col-span-8 p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center gap-6 border-r border-[#333]">
-                    <div className="w-16 h-16 bg-[#111] border border-orange-500/30 shadow-[0_0_15px_#f9731633] rounded-xl flex items-center justify-center relative">
-                        <Server className={`w-8 h-8 ${device.isConnected ? 'text-orange-500' : 'text-gray-600'}`} />
-                        {device.isConnected && <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-[#0A0A0A] shadow-[0_0_8px_#22c55eff] animate-ping"></div>}
-                        {device.isConnected && <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-[#0A0A0A]"></div>}
+                <div className="md:col-span-8 p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center gap-6 border-r border-[#3f3f4e]">
+                    <div className="w-16 h-16 bg-[#2a2a3a] border-2 border-orange-500/40 shadow-[0_0_20px_rgba(249,115,22,0.2)] rounded-2xl flex items-center justify-center relative">
+                        <Server className={`w-8 h-8 ${device.isConnected ? 'text-orange-400' : 'text-gray-500'}`} />
+                        {device.isConnected && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#1e1e2d] shadow-[0_0_10px_#22c55eff] animate-ping"></div>}
+                        {device.isConnected && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#1e1e2d]"></div>}
                     </div>
                     <div className="flex-1">
                         <h3 className="text-2xl font-black font-mono tracking-widest text-white uppercase">{deviceName || device.deviceId}</h3>
@@ -350,17 +350,19 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
 
 function DarkToggleSwitch({ label, active, activeColor, handleColor, icon, onChange }) {
     return (
-        <div className="flex items-center justify-between p-4 bg-[#111] hover:bg-[#151515] rounded-xl border border-[#222] hover:border-orange-500/30 transition-all group">
-            <div className="flex items-center gap-3">
-                {icon}
-                <span className={`font-mono text-sm uppercase tracking-widest transition-colors ${active ? 'text-white' : 'text-[#777]'}`}>
+        <div className={`flex items-center justify-between p-5 bg-[#252535] hover:bg-[#2a2a40] rounded-2xl border-2 transition-all group ${active ? 'border-orange-500/40 shadow-[0_0_15px_rgba(249,115,22,0.1)]' : 'border-[#3f3f4e]'}`}>
+            <div className="flex items-center gap-4">
+                <div className={`p-2.5 rounded-xl border ${active ? 'bg-orange-500/20 border-orange-500/40' : 'bg-[#1a1a24] border-[#3f3f4e]'}`}>
+                    {icon}
+                </div>
+                <span className={`font-mono text-sm font-black uppercase tracking-widest transition-colors ${active ? 'text-white' : 'text-gray-400'}`}>
                     {label}
                 </span>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" className="sr-only peer" checked={active} onChange={onChange} />
-                <div className={`w-14 h-8 bg-black border-2 border-[#333] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-gray-600 after:border-gray-600 after:border after:rounded-full after:h-6 after:w-6 after:transition-all ${active ? 'peer-checked:border-orange-500' : ''} ${active ? activeColor : ''}`}>
-                    <div className={`absolute top-[4px] left-[4px] w-6 h-6 rounded-full transition-all ${active ? `translate-x-6 ${handleColor}` : 'bg-gray-700'}`}></div>
+                <div className={`w-14 h-8 bg-black/40 border-2 border-[#444] rounded-full peer peer-checked:after:translate-x-6 after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-gray-500 after:rounded-full after:h-6 after:w-6 after:transition-all ${active ? 'border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : ''}`}>
+                    <div className={`absolute top-[4px] left-[4px] w-6 h-6 rounded-full transition-all ${active ? `translate-x-6 ${handleColor}` : 'bg-gray-600'}`}></div>
                 </div>
             </label>
         </div>

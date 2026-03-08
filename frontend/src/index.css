@@ -2,19 +2,23 @@
 
 @layer base {
   body {
-    /* Slightly lighter than pitch black for better contrast and depth */
-    @apply bg-[#0d0d12] text-gray-100 font-sans antialiased selection:bg-orange-500/30;
-    background-image: radial-gradient(circle at 50% -20%, #1e1e2d 0%, #0d0d12 70%);
+    background-color: #12121a;
+    color: #f3f4f6;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-image: radial-gradient(circle at 50% -20%, #2a2a40 0%, #12121a 100%);
     background-attachment: fixed;
+    margin: 0;
   }
 }
 
 .glass-panel {
-  background-color: rgba(26, 26, 36, 0.9);
+  background-color: rgba(30, 30, 45, 0.95);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
 /* Custom Webkit Scrollbar */
@@ -23,11 +27,11 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #050505;
+  background: #12121a;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: #3a3a4a;
   border-radius: 4px;
 }
 
