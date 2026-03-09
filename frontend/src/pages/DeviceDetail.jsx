@@ -582,7 +582,7 @@ ${device.otaEnabled ? `
     Serial.println("HTTP error: " + String(code));
   }
   http.end();
-  delay(100);
+  delay(20); // 20ms = ~50 polls/sec for near-instant control
 }`;
     };
     const pinMacro = (p) => `PIN_${sanitize(p.label)}`;
@@ -861,6 +861,22 @@ ${device.otaEnabled ? `
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all shrink-0 ${showWifi ? 'bg-orange-500/20 border-orange-500/40 text-orange-400' : dark ? 'border-[#222] text-[#555] hover:text-white' : 'border-gray-300 text-gray-500 hover:text-gray-900'}`}>
                         <Wifi className="w-3.5 h-3.5" /> WiFi Credentials
                     </button>
+                    {/* OTA Toggle — always visible, ESP32 only */}
+                    {!isSerial && !isUSB && device.board === 'esp32' && (
+                        <button
+                            onClick={async () => {
+                                const newVal = !device.otaEnabled;
+                                setDevice(prev => ({ ...prev, otaEnabled: newVal }));
+                                try { await axios.put(`${API}/api/devices/${id}`, { otaEnabled: newVal }, { headers }); } catch { }
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all shrink-0 ${device.otaEnabled
+                                    ? 'bg-purple-500/20 border-purple-500/40 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
+                                    : dark ? 'border-[#333] text-[#555] hover:text-purple-400 hover:border-purple-500/30' : 'border-gray-300 text-gray-400 hover:text-purple-500'
+                                }`}>
+                            <div className={`w-2 h-2 rounded-full ${device.otaEnabled ? 'bg-purple-400 animate-pulse' : 'bg-gray-600'}`} />
+                            Cloud OTA {device.otaEnabled ? 'ON' : 'OFF'}
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -884,21 +900,8 @@ ${device.otaEnabled ? `
                                 </button>
                             </div>
                         </div>
-                        <div className="flex flex-col gap-2">
-                            <label className={`flex items-center gap-2 cursor-pointer p-2 rounded-lg border transition-all ${device.otaEnabled ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : dark ? 'border-[#333] text-[#555]' : 'border-gray-200 text-gray-400'}`}>
-                                <input type="checkbox" checked={device.otaEnabled} onChange={e => setDevice(prev => ({ ...prev, otaEnabled: e.target.checked }))} className="hidden" />
-                                <div className={`w-8 h-4 rounded-full relative transition-all ${device.otaEnabled ? 'bg-purple-500' : 'bg-gray-700'}`}>
-                                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${device.otaEnabled ? 'left-4.5' : 'left-0.5'}`} />
-                                </div>
-                                <span className="text-[10px] font-mono font-bold uppercase select-none">Enable Cloud OTA</span>
-                            </label>
-                            <button onClick={saveWifi} disabled={savingWifi}
-                                className="flex items-center justify-center gap-2 py-2 rounded-xl bg-orange-500 text-black font-bold text-sm hover:bg-orange-400 transition-all disabled:opacity-50">
-                                <Save className="w-4 h-4" /> {savingWifi ? 'Save Settings' : 'Save Settings'}
-                            </button>
-                        </div>
                         <p className={`col-span-full font-mono text-[10px] ${mutedText}`}>
-                            <span className="text-orange-500 font-bold">OTA:</span> Wireless updates via cloud. Requires one-time USB flash first.
+                            WiFi credentials are stored securely and auto-filled in generated code.
                         </p>
                     </motion.div>
                 )}
