@@ -491,7 +491,6 @@ const char* VERSION    = "${Date.now()}"; // Used for OTA tracking
 // ── Global Objects ─────────────────────────────────────────────
 ${isESP8266 ? 'WiFiClient client;' : 'WiFiClientSecure client;'}
 HTTPClient http;
-${device.otaEnabled && !isESP8266 ? 'HTTPUpdate httpUpdate;' : ''}
 
 // ── Pin Definitions ────────────────────────────────────────────
 ${pinDefs}
