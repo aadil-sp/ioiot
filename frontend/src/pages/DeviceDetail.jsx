@@ -488,8 +488,10 @@ const char* AUTH_TOKEN = "${device.authToken}";
 const char* SERVER_URL = "${API || 'https://aadilsp-ioiot-backend.hf.space'}/api/esp/state";
 const char* VERSION    = "${Date.now()}"; // Used for OTA tracking
 
-// ── Global Client ────────────────────────────────────────────────
+// ── Persistent global connection (no SSL re-handshake every request) ──────────
 ${isESP8266 ? 'WiFiClient client;' : 'NetworkClientSecure client;'}
+HTTPClient http;
+bool httpStarted = false;
 
 // ── Pin Definitions ────────────────────────────────────────────
 ${pinDefs}
@@ -497,51 +499,53 @@ ${pinDefs}
 ${servoObjects || '// (no servo pins)'}
 ${stateVarsWifi ? '\n' + stateVarsWifi : ''}
 
+void connectServer() {
+  if (httpStarted) { http.end(); httpStarted = false; }
+  ${!isESP8266 ? 'client.setInsecure();' : ''}
+  http.begin(client, SERVER_URL);
+  http.addHeader("x-auth-token", AUTH_TOKEN);
+  http.setReuse(true);      // Keep TCP alive
+  http.setTimeout(3000);
+  httpStarted = true;
+  Serial.println("Server connection ready.");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(${isESP8266 ? '1000' : '2000'});
 
 ${setupPins}
 
-  ${!isESP8266 ? 'client.setInsecure(); // Allow HTTPS without certificate validation' : ''}
-
   WiFi.mode(WIFI_STA);
   Serial.print("Connecting to WiFi");
 
   ${!isESP8266 ? `
-  // --- FAST CONNECT (ESP32) ---
   Preferences prefs;
   prefs.begin("wifi-cfg", true);
   int ch = prefs.getInt("ch", 0);
   uint8_t bssid[6];
   bool hasBssid = prefs.getBytes("bssid", bssid, 6) == 6;
   prefs.end();
-
-  if (ch > 0 && hasBssid) {
-    Serial.print(" (Fast Connect)");
-    WiFi.begin(ssid, password, ch, bssid);
-  } else {
-    WiFi.begin(ssid, password);
-  }
+  if (ch > 0 && hasBssid) { Serial.print(" (Fast)"); WiFi.begin(ssid, password, ch, bssid); }
+  else { WiFi.begin(ssid, password); }
   ` : 'WiFi.begin(ssid, password);'}
 
 ${wifiPower}
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries++ < 40) {
     delay(500); Serial.print(".");
-    ${!isESP8266 ? 'if (tries == 12) { WiFi.disconnect(); WiFi.begin(ssid, password); Serial.print(" (retry)"); }' : ''}
+    ${!isESP8266 ? 'if (tries == 12) { WiFi.disconnect(); WiFi.begin(ssid, password); }' : ''}
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\\n\u2713 Connected! IP: " + WiFi.localIP().toString());
+    Serial.println("\\n\u2713 Connected: " + WiFi.localIP().toString());
     ${!isESP8266 ? `
-    // Save BSSID/channel for next fast connect
     Preferences prefs2;
     prefs2.begin("wifi-cfg", false);
     prefs2.putInt("ch", WiFi.channel());
     prefs2.putBytes("bssid", WiFi.BSSID(), 6);
-    prefs2.end();
-    ` : ''}
+    prefs2.end();` : ''}
+    connectServer(); // Open persistent connection once
   } else {
     Serial.println("\\n\u2717 WiFi failed. Restarting...");
     ESP.restart();
@@ -550,39 +554,34 @@ ${wifiPower}
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi lost, reconnecting...");
-    WiFi.reconnect();
-    delay(5000);
-    return;
+    WiFi.reconnect(); delay(5000); return;
   }
 
-  HTTPClient http;
-  http.begin(client, SERVER_URL);
-  http.addHeader("x-auth-token", AUTH_TOKEN);
-  http.setTimeout(3000);
+  // Reuse existing connection — no SSL handshake overhead
   int code = http.GET();
 
   if (code == 200) {
     StaticJsonDocument<1024> doc;
-    DeserializationError err = deserializeJson(doc, http.getString());
-    if (!err) {
+    if (!deserializeJson(doc, http.getString())) {
 ${applyLogicWifi || '      // Configure pins in Pin Config tab'}
 ${device.otaEnabled ? `
-      // \u2500\u2500 Wireless Cloud Update (OTA) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
       if (doc.containsKey("_ota")) {
-        String url = doc["_ota"]["url"];
         String v = doc["_ota"]["ver"];
         if (v != String(VERSION)) {
-          Serial.println("OTA Update: " + v);
+          String url = doc["_ota"]["url"];
+          Serial.println("OTA: " + v);
           httpUpdate.update(client, url);
         }
       }` : ''}
     }
-  } else if (code < 0) {
-    Serial.println("HTTP error: " + String(code));
+  } else {
+    // Connection dropped — reconnect
+    Serial.println("Reconnecting... code=" + String(code));
+    delay(1000);
+    connectServer();
   }
-  http.end();
-  delay(20); // 20ms = ~50 polls/sec for near-instant control
+  // No http.end() — keep-alive!
+  delay(50); // 50ms polling, ~20 polls/sec, very fast
 }`;
     };
     const pinMacro = (p) => `PIN_${sanitize(p.label)}`;
@@ -870,8 +869,8 @@ ${device.otaEnabled ? `
                                 try { await axios.put(`${API}/api/devices/${id}`, { otaEnabled: newVal }, { headers }); } catch { }
                             }}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all shrink-0 ${device.otaEnabled
-                                    ? 'bg-purple-500/20 border-purple-500/40 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
-                                    : dark ? 'border-[#333] text-[#555] hover:text-purple-400 hover:border-purple-500/30' : 'border-gray-300 text-gray-400 hover:text-purple-500'
+                                ? 'bg-purple-500/20 border-purple-500/40 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
+                                : dark ? 'border-[#333] text-[#555] hover:text-purple-400 hover:border-purple-500/30' : 'border-gray-300 text-gray-400 hover:text-purple-500'
                                 }`}>
                             <div className={`w-2 h-2 rounded-full ${device.otaEnabled ? 'bg-purple-400 animate-pulse' : 'bg-gray-600'}`} />
                             Cloud OTA {device.otaEnabled ? 'ON' : 'OFF'}
