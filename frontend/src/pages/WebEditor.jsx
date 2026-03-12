@@ -575,7 +575,7 @@ export default function WebEditor() {
     };
 
     return (
-        <div className={`h-[calc(100vh-70px)] flex flex-col overflow-hidden ${dark ? 'bg-[#0d0d14]' : 'bg-gray-100'}`}>
+        <div className={`h-full flex flex-col overflow-hidden ${dark ? 'bg-[#0d0d14]' : 'bg-gray-100'}`}>
             {/* ── Top Bar ─────────────────────────────────────────────────────── */}
             <div className={`flex items-center gap-3 px-4 py-2.5 border-b flex-wrap ${dark ? 'bg-[#12121e] border-[#252535]' : 'bg-white border-gray-200'}`}>
                 {/* Logo area */}

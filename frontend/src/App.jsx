@@ -166,9 +166,9 @@ function AppShell({ auth, setAuth, dark, toggle }) {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 relative overflow-x-hidden">
+      <main className={`flex-1 relative ${location.pathname === '/web-editor' ? 'overflow-hidden h-[calc(100vh-70px)]' : 'overflow-x-hidden'}`}>
         <div className={`absolute top-1/4 left-1/4 w-[50vw] h-[50vh] rounded-full blur-[120px] pointer-events-none ${dark ? 'bg-orange-600/5' : 'bg-orange-400/8'}`}></div>
-        <div className="relative z-10">
+        <div className={`relative z-10 ${location.pathname === '/web-editor' ? 'h-full' : ''}`}>
           <Routes>
             <Route path="/login" element={<Login setAuth={setAuth} />} />
             <Route path="/register" element={<Register />} />
