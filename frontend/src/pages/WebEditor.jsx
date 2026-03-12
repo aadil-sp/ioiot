@@ -575,7 +575,7 @@ export default function WebEditor() {
     };
 
     return (
-        <div className={`min-h-screen flex flex-col ${dark ? 'bg-[#0d0d14]' : 'bg-gray-100'}`}>
+        <div className={`h-[calc(100vh-70px)] flex flex-col overflow-hidden ${dark ? 'bg-[#0d0d14]' : 'bg-gray-100'}`}>
             {/* ── Top Bar ─────────────────────────────────────────────────────── */}
             <div className={`flex items-center gap-3 px-4 py-2.5 border-b flex-wrap ${dark ? 'bg-[#12121e] border-[#252535]' : 'bg-white border-gray-200'}`}>
                 {/* Logo area */}
@@ -682,7 +682,7 @@ export default function WebEditor() {
             </div>
 
             {/* ── Main Layout ──────────────────────────────────────────────────── */}
-            <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 110px)' }}>
+            <div className="flex flex-1 overflow-hidden">
                 {/* Left: Editor */}
                 <div className="flex-1 flex flex-col min-w-0">
                     {/* Editor title bar */}
