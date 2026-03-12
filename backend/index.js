@@ -519,7 +519,7 @@ app.get('/', (req, res) => {
 // ─── ESP32 Compile Endpoint ──────────────────────────────────────────────────
 // Compiles Arduino sketch using arduino-cli and streams logs back as SSE.
 // Returns the compiled binary files as base64 for browser-side flashing via esptool-js.
-app.post('/api/compile', authenticate, async (req, res) => {
+app.post('/api/compile', async (req, res) => {
     const { code, board = 'esp32:esp32:esp32' } = req.body;
     if (!code || !code.trim()) {
         return res.status(400).json({ error: 'No code provided' });

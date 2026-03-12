@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Cpu, Zap, Wifi, Shield, Code2, MonitorPlay, Smartphone, Globe } from 'lucide-react';
+import { Cpu, Zap, Wifi, Shield, Code2, MonitorPlay, Smartphone, Globe, Terminal } from 'lucide-react';
 import { useContext } from 'react';
 import { ThemeContext } from '../App';
 
@@ -10,7 +10,8 @@ export default function Landing() {
     const features = [
         { icon: <Zap className="w-6 h-6 text-yellow-400" />, title: 'Real-Time Control', desc: 'Instantly control your ESP32 devices globally via WebSockets with ultra-low latency.' },
         { icon: <Code2 className="w-6 h-6 text-blue-400" />, title: 'Auto CodeGen', desc: 'Configure pins and generate the exact Arduino code needed for your hardware instantly.' },
-        { icon: <MonitorPlay className="w-6 h-6 text-purple-400" />, title: 'Web Serial Flash', desc: 'Compile in the cloud and flash your ESP32 directly from your browser over USB.' },
+        { icon: <Terminal className="w-6 h-6 text-purple-400" />, title: 'Web IDE & Editor', desc: 'Write, compile and flash ESP32 code right in your browser. No Arduino IDE needed. Free & no login required.' },
+        { icon: <MonitorPlay className="w-6 h-6 text-pink-400" />, title: 'Web Serial Flash', desc: 'Compile in the cloud and flash your ESP32 directly from your browser over USB.' },
         { icon: <Wifi className="w-6 h-6 text-green-400" />, title: 'Hybrid Connectivity', desc: 'Seamlessly switch between WiFi Cloud mode and Bluetooth Serial local mode.' },
         { icon: <Shield className="w-6 h-6 text-red-400" />, title: 'Secure Access', desc: 'JWT-based authentication ensures only you and your admins can control your hardware.' },
         { icon: <Smartphone className="w-6 h-6 text-pink-400" />, title: 'Mobile Optimized', desc: 'A fully responsive dashboard that looks and works beautifully on any device.' },
@@ -43,6 +44,12 @@ export default function Landing() {
                         <Link to="/register"
                             className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-lg hover:shadow-[0_0_30px_#f9731666] hover:scale-105 transition-all">
                             Get Started Free
+                        </Link>
+                        <Link to="/web-editor"
+                            className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-violet-700 text-white font-bold text-lg hover:shadow-[0_0_30px_rgba(168,85,247,0.5)] hover:scale-105 transition-all flex items-center justify-center gap-2">
+                            <Terminal className="w-5 h-5" />
+                            Try Web Editor
+                            <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">No Login</span>
                         </Link>
                         <Link to="/login"
                             className={`w-full sm:w-auto px-8 py-4 rounded-2xl border font-bold text-lg hover:scale-105 transition-all ${dark ? 'border-[#333] text-gray-300 hover:border-orange-500 hover:text-white bg-[#111]' : 'border-gray-300 text-gray-700 hover:border-orange-500 hover:text-orange-600 bg-white'}`}>
