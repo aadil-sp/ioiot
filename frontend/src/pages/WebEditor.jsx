@@ -562,6 +562,7 @@ export default function WebEditor() {
     };
 
     const insertLib = (include) => {
+        if (code.includes(include)) return;
         if (!editorRef.current) {
             setCode(prev => include + '\n' + prev);
             return;
@@ -575,7 +576,14 @@ export default function WebEditor() {
     };
 
     return (
-        <div className={`flex-1 flex flex-col overflow-hidden ${dark ? 'bg-[#0d0d14]' : 'bg-gray-100'}`}>
+        <div className={`flex-1 flex flex-col overflow-hidden ${dark ? 'bg-[#0d0d14]' : 'bg-gray-100'} ioiot-editor-container`}>
+            <style>{`
+                .ioiot-editor-container ::-webkit-scrollbar { width: 8px; height: 8px; }
+                .ioiot-editor-container ::-webkit-scrollbar-track { background: ${dark ? '#0d0d14' : '#f3f4f6'}; }
+                .ioiot-editor-container ::-webkit-scrollbar-thumb { background: ${dark ? '#222' : '#ddd'}; border-radius: 4px; }
+                .ioiot-editor-container ::-webkit-scrollbar-thumb:hover { background: ${dark ? '#333' : '#ccc'}; }
+                .monaco-editor .scroll-decoration { box-shadow: none !important; }
+            `}</style>
             {/* ── Top Bar ─────────────────────────────────────────────────────── */}
             <div className={`flex items-center gap-3 px-4 py-2.5 border-b flex-wrap ${dark ? 'bg-[#12121e] border-[#252535]' : 'bg-white border-gray-200'}`}>
                 {/* Logo area */}
