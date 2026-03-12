@@ -332,7 +332,6 @@ export default function WebEditor() {
     // ── Monaco Editor setup ──────────────────────────────────────────────────
     const handleEditorMount = (editor, monaco) => {
         editorRef.current = editor;
-        setEditorReady(true);
 
         // Register a basic C++-like language enhancement for Arduino
         monaco.languages.registerCompletionItemProvider('cpp', {
