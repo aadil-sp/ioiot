@@ -113,7 +113,7 @@ function AppShell({ auth, setAuth, dark, toggle }) {
   const nc = notifColors[notification?.type] || notifColors.info;
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${dark ? 'bg-[#12121a] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+    <div className={`h-screen flex flex-col font-sans transition-colors duration-300 overflow-hidden ${dark ? 'bg-[#12121a] text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
       <header className={`px-4 sm:px-6 py-4 border-b flex justify-between items-center sticky top-0 z-50 backdrop-blur-2xl transition-colors duration-300 ${dark ? 'border-orange-500/40 bg-[#12121a]/80 shadow-[0_4px_30px_rgba(0,0,0,0.4)]' : 'border-orange-300/40 bg-white/90'}`}>
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 sm:gap-3">
@@ -166,9 +166,9 @@ function AppShell({ auth, setAuth, dark, toggle }) {
         )}
       </AnimatePresence>
 
-      <main className={`flex-1 relative ${location.pathname === '/web-editor' ? 'overflow-hidden h-[calc(100vh-70px)]' : 'overflow-x-hidden'}`}>
+      <main className={`flex-1 relative ${location.pathname === '/web-editor' ? 'overflow-hidden' : 'overflow-x-hidden'}`}>
         <div className={`absolute top-1/4 left-1/4 w-[50vw] h-[50vh] rounded-full blur-[120px] pointer-events-none ${dark ? 'bg-orange-600/5' : 'bg-orange-400/8'}`}></div>
-        <div className={`relative z-10 ${location.pathname === '/web-editor' ? 'h-full' : ''}`}>
+        <div className={`relative z-10 ${location.pathname === '/web-editor' ? 'h-full flex flex-col' : ''}`}>
           <Routes>
             <Route path="/login" element={<Login setAuth={setAuth} />} />
             <Route path="/register" element={<Register />} />
