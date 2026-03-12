@@ -18,9 +18,9 @@ RUN arduino-cli config init && \
     arduino-cli config add board_manager.additional_urls \
     "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json" && \
     arduino-cli core update-index && \
-    arduino-cli core install esp32:esp32 && \
-    arduino-cli lib install "ArduinoJson" && \
-    arduino-cli lib install "ESP32Servo" && \
+    (for i in 1 2 3 4 5; do arduino-cli core install esp32:esp32 && break || sleep 15; done) && \
+    (for i in 1 2 3 4 5; do arduino-cli lib install "ArduinoJson" && break || sleep 15; done) && \
+    (for i in 1 2 3 4 5; do arduino-cli lib install "ESP32Servo" && break || sleep 15; done) && \
     echo "Arduino CLI setup complete"
 
 # Save boot_app0.bin path so the compile endpoint can find it at runtime
