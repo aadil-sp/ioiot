@@ -24,6 +24,7 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/iot-platform';
@@ -65,6 +66,13 @@ mongoose.connect(MONGO_URI).then(async () => {
         await User.create({ username: 'abhiram', password: hashedUser, role: 'user', isApproved: true });
         console.log('Test user abhiram seeded');
     }
+
+    const shopExists = await User.findOne({ username: 'nirmala' });
+    if (!shopExists) {
+        const hashedShop = await bcrypt.hash('nirmala@123', 10);
+        await User.create({ username: 'nirmala', password: hashedShop, role: 'shopkeeper', isApproved: true, shopName: 'Nirmala Printers' });
+        console.log('Test shop nirmala seeded');
+    }
 }).catch(err => console.error('MongoDB connection error', err));
 
 // ─── Auth Routes ─────────────────────────────────────────────────────────────
@@ -95,7 +103,7 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(403).json({ error: 'Account not approved yet' });
         }
         const token = jwt.sign({ id: user._id, role: user.role, username: user.username }, JWT_SECRET);
-        res.json({ token, role: user.role, username: user.username, userId: user._id });
+        res.json({ token, role: user.role, username: user.username, userId: user._id, walletBalance: user.walletBalance || 0 });
     } catch (error) {
         res.status(500).json({ error: 'Login failed' });
     }
@@ -510,6 +518,9 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => { });
 });
+
+// ─── InkQueue Routes ──────────────────────────────────────────────────────────
+app.use('/api/inkqueue', require('./routes/inkqueue'));
 
 // Basic health check
 app.get('/', (req, res) => {

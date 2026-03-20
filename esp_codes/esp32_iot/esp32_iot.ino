@@ -1,135 +1,102 @@
-#include "esp_wifi.h"
-#include <ArduinoJson.h>
-#include <HTTPClient.h>
-#include <WiFi.h>
+#include <M5Unified.h>
+#include <BleMouse.h>
 
-// WiFi credentials
-const char *ssid = "Asianetgigafiber";
-const char *password = "Aadil@123";
+// Initialize the Bluetooth Mouse with a custom name
+BleMouse bleMouse("M5Stick-Mouse", "M5Stack", 100);
 
-// Backend URL (Vercel)
-const char *serverUrl = "https://ioiot.vercel.app/api/esp/device-001/state";
+// State Variables
+bool invertX = false;
+bool invertY = false;
+bool isDragging = false;
 
-// Pin definitions
-const int LED_GREEN = 18;
-const int LED_BLUE = 19;
-const int LED_RED = 21;
-const int FLASH_PIN = 22;
-const int PROPELLER_PIN = 23;
-
-void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
-  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
-    Serial.print("Disconnect reason: ");
-    Serial.println(info.wifi_sta_disconnected.reason);
-  }
+// Function to update the screen display
+void drawMenu() {
+    M5.Display.fillScreen(BLACK);
+    M5.Display.setCursor(0, 0);
+    M5.Display.setTextColor(YELLOW);
+    M5.Display.setTextSize(2);
+    M5.Display.println(" BT MOUSE MODE");
+    M5.Display.println("---------------");
+    
+    M5.Display.setTextColor(WHITE);
+    M5.Display.printf("Inv X: %s\n", invertX ? "ON " : "OFF");
+    M5.Display.printf("Inv Y: %s\n", invertY ? "ON " : "OFF");
+    M5.Display.println("---------------");
+    
+    if (isDragging) {
+        M5.Display.setTextColor(RED);
+        M5.Display.println("STATUS: DRAGGING");
+    } else {
+        M5.Display.setTextColor(GREEN);
+        M5.Display.println("STATUS: IDLE");
+    }
+    
+    M5.Display.setTextSize(1);
+    M5.Display.setCursor(0, 200);
+    M5.Display.setTextColor(GRAY);
+    M5.Display.println("B: Click | Long B: Invert");
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(2000); // ⚖️ Wait for power stabilization
-  Serial.println("\n--- IoIoT System Booting (Lean Mode) ---");
-
-  pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_BLUE, OUTPUT);
-  pinMode(LED_RED, OUTPUT);
-  pinMode(FLASH_PIN, OUTPUT);
-  pinMode(PROPELLER_PIN, OUTPUT);
-
-  WiFi.onEvent(WiFiEvent);
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true);
-  delay(500);
-
-  // REDUCE POWER spike manually (Critical for Status 6/Reboots)
-  WiFi.begin(ssid, password);
-  esp_wifi_set_max_tx_power(
-      34); // Reduce to low power (~8.5dBm) to prevent crash
-
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(ssid);
-
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nSUCCESS: Connection Established!");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("\nFAILED: No connection.");
-  }
+    auto cfg = M5.config();
+    M5.begin(cfg);
+    
+    // Set rotation for horizontal holding
+    M5.Display.setRotation(1);
+    
+    // Start Bluetooth Mouse
+    bleMouse.begin();
+    
+    drawMenu();
 }
 
-bool lastG = false, lastB = false, lastR = false, lastF = false, lastP = false;
-
 void loop() {
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.begin(serverUrl);
-    http.setTimeout(15000); // 15s timeout to allow for server cold start 🧊
-    int httpResponseCode = http.GET();
+    M5.update(); // Monitors button states and IMU
 
-    if (httpResponseCode > 0) {
-      String payload = http.getString();
-      StaticJsonDocument<512> doc;
-      DeserializationError error = deserializeJson(doc, payload);
+    // 1. HANDLE MOUSE MOVEMENT (GYRO)
+    if (M5.Imu.update()) {
+        float gx, gy, gz;
+        M5.Imu.getGyroData(&gx, &gy, &gz);
 
-      if (!error) {
-        bool ledG = doc["ledG"] | false;
-        bool ledB = doc["ledB"] | false;
-        bool ledR = doc["ledR"] | false;
-        bool flash = doc["flash"] | false;
-        bool propeller = doc["propeller"] | false;
+        // Sensitivity: Divide by 15 (Increase for slower, decrease for faster)
+        // Adjust axes based on how you hold the stick
+        int8_t moveX = (gz / 15.0) * (invertX ? -1 : 1); 
+        int8_t moveY = (gy / 15.0) * (invertY ? -1 : 1);
 
-        digitalWrite(LED_GREEN, ledG ? HIGH : LOW);
-        digitalWrite(LED_BLUE, ledB ? HIGH : LOW);
-        digitalWrite(LED_RED, ledR ? HIGH : LOW);
-        digitalWrite(FLASH_PIN, flash ? HIGH : LOW);
-        digitalWrite(PROPELLER_PIN, propeller ? HIGH : LOW);
+        // Deadzone to prevent "drifting" while still
+        if (abs(moveX) < 1) moveX = 0;
+        if (abs(moveY) < 1) moveY = 0;
 
-        // Feedback on Change
-        if (ledG != lastG) {
-          Serial.print("LED_GREEN: ");
-          Serial.println(ledG ? "ON" : "OFF");
-          lastG = ledG;
+        if (bleMouse.isConnected()) {
+            bleMouse.move(moveX, moveY);
         }
-        if (ledB != lastB) {
-          Serial.print("LED_BLUE: ");
-          Serial.println(ledB ? "ON" : "OFF");
-          lastB = ledB;
-        }
-        if (ledR != lastR) {
-          Serial.print("LED_RED: ");
-          Serial.println(ledR ? "ON" : "OFF");
-          lastR = ledR;
-        }
-        if (flash != lastF) {
-          Serial.print("FLASH: ");
-          Serial.println(flash ? "ON" : "OFF");
-          lastF = flash;
-        }
-        if (propeller != lastP) {
-          Serial.print("PROPELLER: ");
-          Serial.println(propeller ? "ON" : "OFF");
-          lastP = propeller;
-        }
-
-      } else {
-        Serial.print("JSON Error: ");
-        Serial.println(error.c_str());
-      }
-    } else {
-      Serial.print("HTTP Error: ");
-      Serial.println(httpResponseCode);
     }
-    http.end();
-  } else {
-    Serial.println("WiFi Lost. Reconnecting...");
-    WiFi.begin(ssid, password);
-  }
-  delay(500); // Poll every 500ms for ultra-responsiveness
+
+    // 2. BUTTON A (Front Big Button) - Click and Hold / Drag
+    if (M5.BtnA.wasPressed()) {
+        isDragging = true;
+        bleMouse.press(MOUSE_LEFT);
+        drawMenu();
+    }
+    if (M5.BtnA.wasReleased()) {
+        isDragging = false;
+        bleMouse.release(MOUSE_LEFT);
+        drawMenu();
+    }
+
+    // 3. BUTTON B (Side Button) - Click or Invert Toggle
+    if (M5.BtnB.wasClicked()) {
+        bleMouse.click(MOUSE_LEFT);
+    }
+
+    // Toggle Inversion if B is held for more than 700ms
+    if (M5.BtnB.pressedFor(700)) {
+        invertX = !invertX;
+        invertY = !invertY;
+        drawMenu();
+        // Wait until button is released so it doesn't flip-flop
+        while(M5.BtnB.isPressed()) { M5.update(); delay(10); }
+    }
+
+    delay(10); // 100Hz Polling rate
 }
