@@ -380,11 +380,12 @@ export default function WebEditor() {
         setActivePanel('terminal');
 
         try {
+            const token = localStorage.getItem('token') || '';
             const response = await fetch(`${API}/api/compile`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // No auth required for web editor!
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                 },
                 body: JSON.stringify({ code: src, board: selectedBoard }),
             });
