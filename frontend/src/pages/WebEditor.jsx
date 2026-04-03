@@ -485,6 +485,11 @@ export default function WebEditor() {
             addLog('❌ Flash failed: ' + err.message, true);
         } finally {
             setFlashing(false);
+            if (transport) {
+                try {
+                    await transport.disconnect();
+                } catch { /* ignore */ }
+            }
         }
     };
 

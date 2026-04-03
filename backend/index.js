@@ -630,10 +630,22 @@ app.post('/api/compile', async (req, res) => {
             } catch { }
 
             const flashFiles = [];
-            if (bootloaderName) flashFiles.push({ address: 0x1000, data: readBin(bootloaderName), name: 'Bootloader' });
-            if (partitionsName) flashFiles.push({ address: 0x8000, data: readBin(partitionsName), name: 'Partition Table' });
-            if (bootApp0Data) flashFiles.push({ address: 0xe000, data: bootApp0Data, name: 'Boot App0' });
-            flashFiles.push({ address: 0x10000, data: readBin(sketchBinName), name: 'Sketch' });
+            
+            let bootloaderAddress = 0x1000;
+            let sketchAddress = 0x10000;
+            
+            if (board.includes('esp32c3') || board.includes('esp32s3')) {
+                bootloaderAddress = 0x0000;
+            } else if (board.includes('esp8266')) {
+                sketchAddress = 0x0000;
+            }
+
+            if (board.includes('esp32')) {
+                if (bootloaderName) flashFiles.push({ address: bootloaderAddress, data: readBin(bootloaderName), name: 'Bootloader' });
+                if (partitionsName) flashFiles.push({ address: 0x8000, data: readBin(partitionsName), name: 'Partition Table' });
+                if (bootApp0Data) flashFiles.push({ address: 0xe000, data: bootApp0Data, name: 'Boot App0' });
+            }
+            flashFiles.push({ address: sketchAddress, data: readBin(sketchBinName), name: 'Sketch' });
 
             const validFiles = flashFiles.filter(f => f.data);
             const sketchSize = fs.statSync(path.join(buildDir, sketchBinName)).size;
