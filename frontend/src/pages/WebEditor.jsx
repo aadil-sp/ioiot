@@ -113,11 +113,18 @@ void loop() {
 // WiFi Connection — ESP32
 // ================================================================
 #include <WiFi.h>
+#ifdef ESP32
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+#endif
 
 const char* ssid     = "YOUR_SSID";
 const char* password = "YOUR_PASSWORD";
 
 void setup() {
+#ifdef ESP32
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout
+#endif
   Serial.begin(115200);
   delay(1000);
 
@@ -151,12 +158,19 @@ void loop() {
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#ifdef ESP32
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+#endif
 
 const char* ssid     = "YOUR_SSID";
 const char* password = "YOUR_PASSWORD";
 const char* serverUrl = "https://httpbin.org/get";
 
 void setup() {
+#ifdef ESP32
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout
+#endif
   Serial.begin(115200);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) { delay(500); }

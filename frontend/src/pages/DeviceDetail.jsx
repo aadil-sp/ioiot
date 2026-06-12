@@ -395,6 +395,7 @@ export default function DeviceDetail() {
 // ================================================================
 
 ${servoIncludes}#include <ArduinoJson.h>
+${board === 'esp32' ? '#include "soc/soc.h"\n#include "soc/rtc_cntl_reg.h"\n' : ''}
 
 // ── Pin Definitions ────────────────────────────────────────────
 ${pinDefs}
@@ -406,7 +407,7 @@ ${servoObjects || '// (no servo pins)'}
 ${stateVars || '// (none)'}
 
 void setup() {
-  Serial.begin(115200);
+${board === 'esp32' ? '  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector\n' : ''}  Serial.begin(115200);
   while (!Serial); // Leonardo/Mega: wait for USB
   delay(300);
 
