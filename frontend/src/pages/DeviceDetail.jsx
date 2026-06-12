@@ -799,6 +799,7 @@ ${heartbeatFields}
     const boardLabel = device.board ? ({ esp32: 'ESP32', esp8266: 'ESP8266', uno: 'Uno', nano: 'Nano', mega: 'Mega' }[device.board] || device.board.toUpperCase()) : null;
 
     return (
+        <>
         <div className={`min-h-screen p-6 md:p-10 max-w-5xl mx-auto`}>
             {/* Back + Header */}
             <div className="mb-6">
@@ -1420,6 +1421,7 @@ ${heartbeatFields}
                 />
             )}
         </AnimatePresence>
+        </>
     );
 }
 
