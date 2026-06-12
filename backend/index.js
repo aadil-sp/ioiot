@@ -390,6 +390,26 @@ app.put('/api/devices/:id/pins', authenticate, async (req, res) => {
     }
 });
 
+// Save/replace all custom actions for a device
+app.put('/api/devices/:id/actions', authenticate, async (req, res) => {
+    try {
+        const device = await Device.findOne({ deviceId: req.params.id });
+        if (!device) return res.status(404).json({ error: 'Device not found' });
+        const ownerId = (device.owner?._id || device.owner)?.toString();
+        if (ownerId !== req.user.id && req.user.role !== 'admin')
+            return res.status(403).json({ error: 'Unauthorized' });
+
+        device.customActions = req.body.customActions || [];
+        device.markModified('customActions');
+        await device.save();
+        io.emit('deviceActionsUpdate', { deviceId: device.deviceId, customActions: device.customActions });
+        res.json({ customActions: device.customActions });
+    } catch (err) {
+        console.error('Actions save error:', err);
+        res.status(500).json({ error: 'Failed to update actions', detail: err.message });
+    }
+});
+
 // Control a pin (toggle or set value) — REST endpoint
 app.post('/api/devices/:id/control', authenticate, async (req, res) => {
     try {

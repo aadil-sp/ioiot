@@ -7,10 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Wifi, WifiOff, Settings, Plus, Trash2, Save,
     Zap, Copy, Check, Code2, Sliders, RefreshCw, Eye, EyeOff, Bluetooth, ChevronDown,
-    MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle
+    MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle, Maximize2, Edit2
 } from 'lucide-react';
 import { ThemeContext } from '../App';
 import { useSerial } from '../contexts/SerialContext';
+import CustomActionEditor from '../components/CustomActionEditor';
+import CustomActionWidget from '../components/CustomActionWidget';
 
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
@@ -151,7 +153,12 @@ export default function DeviceDetail() {
     const [showPresets, setShowPresets] = useState(false);
     const [otaUpdating, setOtaUpdating] = useState(false);
     const [otaStatus, setOtaStatus] = useState('');
-    const betaMode = true; // Flash & Monitor is always enabled
+    // Custom Actions
+    const [customActions, setCustomActions] = useState([]);
+    const [editingAction, setEditingAction] = useState(null); // action obj or null
+    const [showActionEditor, setShowActionEditor] = useState(false);
+    const [editLayoutMode, setEditLayoutMode] = useState(false);
+    const betaMode = true;
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
 
     // ── Global serial from context (persists across tab changes) ──
@@ -175,6 +182,7 @@ export default function DeviceDetail() {
                 setEditingPins(JSON.parse(JSON.stringify(d.pins || [])));
                 setWifiSSID(d.wifiSSID || '');
                 setWifiPassword(d.wifiPassword || '');
+                setCustomActions(d.customActions || []);
             }
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
@@ -206,11 +214,17 @@ export default function DeviceDetail() {
                 setEditingPins(JSON.parse(JSON.stringify(data.pins || [])));
             }
         });
+        socket.on('deviceActionsUpdate', data => {
+            if (data.deviceId === id) {
+                setCustomActions(data.customActions || []);
+            }
+        });
         return () => {
             clearInterval(heartbeat);
             socket.off('deviceStateUpdate');
             socket.off('deviceStatusUpdate');
             socket.off('deviceConfigUpdate');
+            socket.off('deviceActionsUpdate');
         };
     }, [id]);
 
@@ -296,12 +310,35 @@ export default function DeviceDetail() {
             setEditingPins(JSON.parse(JSON.stringify(res.data.pins || [])));
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 3000);
-            // STAY on config tab — do NOT switch to control
         } catch (err) {
             console.error(err);
             alert(`Failed to save pins: ${err.response?.data?.detail || err.message}`);
         }
         finally { setSavingPins(false); }
+    };
+
+    const saveActions = async (actions) => {
+        try {
+            await axios.put(`${API}/api/devices/${id}/actions`, { customActions: actions }, { headers });
+            setCustomActions(actions);
+        } catch (err) {
+            console.error('Failed to save actions:', err);
+        }
+    };
+
+    const handleSaveAction = async (draft) => {
+        const existing = customActions.find(a => a.id === draft.id);
+        const updated = existing
+            ? customActions.map(a => a.id === draft.id ? draft : a)
+            : [...customActions, draft];
+        await saveActions(updated);
+        setShowActionEditor(false);
+        setEditingAction(null);
+    };
+
+    const handleDeleteAction = async (actionId) => {
+        const updated = customActions.filter(a => a.id !== actionId);
+        await saveActions(updated);
     };
 
     // ─── Code Generator ──────────────────────────────────────────────────────
@@ -875,7 +912,7 @@ ${heartbeatFields}
 
             {/* Tab Content */}
             <AnimatePresence mode="wait">
-                {/* ── CONTROL TAB ─────────────────────────────────────────── */}
+                            {/* ── CONTROL TAB ─────────────────────────────────────────── */}
                 {tab === 'control' && (
                     <motion.div key="control" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                         {device.mode === 'usb' && (
@@ -907,18 +944,61 @@ ${heartbeatFields}
                                 </p>
                             </div>
                         )}
-                        {device.pins.length === 0 ? (
+
+                        {/* Custom Actions section */}
+                        {customActions.length > 0 && (
+                            <div className="mb-6">
+                                <div className="flex items-center justify-between mb-3">
+                                    <p className={`font-mono text-[10px] uppercase tracking-widest font-bold ${mutedText}`}>⚡ Custom Actions</p>
+                                    <button
+                                        onClick={() => setEditLayoutMode(e => !e)}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono border transition-all ${
+                                            editLayoutMode
+                                                ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
+                                                : dark ? 'border-[#333] text-[#555] hover:text-white' : 'border-gray-200 text-gray-400 hover:text-gray-900'
+                                        }`}>
+                                        <Edit2 className="w-3 h-3" />
+                                        {editLayoutMode ? 'Done Editing' : 'Edit Layout'}
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {customActions.map(action => (
+                                        <CustomActionWidget
+                                            key={action.id}
+                                            action={action}
+                                            pins={device.pins}
+                                            deviceState={Object.fromEntries(device.pins.map(p => [p.widgetKey, p.value]))}
+                                            onControl={sendControl}
+                                            onEdit={(a) => { setEditingAction(a); setShowActionEditor(true); }}
+                                            onDelete={handleDeleteAction}
+                                            dark={dark}
+                                            editMode={editLayoutMode}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Regular pin widgets */}
+                        {device.pins.length === 0 && customActions.length === 0 ? (
                             <div className={`flex flex-col items-center justify-center h-52 border-2 border-dashed rounded-2xl text-center ${dark ? 'border-[#1a1a1a]' : 'border-gray-200'}`}>
                                 <Zap className={`w-10 h-10 mb-3 ${dark ? 'text-[#222]' : 'text-gray-200'}`} />
                                 <p className={`font-mono text-sm ${dark ? 'text-[#444]' : 'text-gray-400'}`}>No pins configured yet</p>
                                 <button onClick={() => setTab('config')} className="mt-3 text-orange-500 font-mono text-xs hover:underline">→ Go to Pin Config</button>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {device.pins.map(pin => (
-                                    <ControlWidget key={pin.widgetKey} pin={pin} isSerial={isSerial} onControl={sendControl} dark={dark} board={device?.board} />
-                                ))}
-                            </div>
+                            device.pins.length > 0 && (
+                                <>
+                                    {customActions.length > 0 && (
+                                        <p className={`font-mono text-[10px] uppercase tracking-widest font-bold mb-3 ${mutedText}`}>📌 Individual Pins</p>
+                                    )}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {device.pins.map(pin => (
+                                            <ControlWidget key={pin.widgetKey} pin={pin} isSerial={isSerial} onControl={sendControl} dark={dark} board={device?.board} />
+                                        ))}
+                                    </div>
+                                </>
+                            )
                         )}
                     </motion.div>
                 )}
@@ -986,6 +1066,61 @@ ${heartbeatFields}
                                 ))}
                             </div>
                         )}
+
+                        {/* ── Custom Actions section ── */}
+                        <div className={`mt-8 pt-6 border-t ${dark ? 'border-[#1a1a1a]' : 'border-gray-100'}`}>
+                            <div className="flex items-center justify-between mb-4">
+                                <div>
+                                    <h3 className={`font-mono font-bold uppercase tracking-widest text-sm ${dark ? 'text-white' : 'text-gray-900'}`}>Custom Actions</h3>
+                                    <p className={`font-mono text-[10px] mt-0.5 ${mutedText}`}>Multi-pin sequences with animations and custom timing</p>
+                                </div>
+                                <button
+                                    onClick={() => { setEditingAction(null); setShowActionEditor(true); }}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-500 text-xs font-mono font-bold hover:bg-orange-500 hover:text-black transition-all">
+                                    <Plus className="w-3.5 h-3.5" /> New Action
+                                </button>
+                            </div>
+
+                            {customActions.length === 0 ? (
+                                <div className={`border-2 border-dashed rounded-2xl p-8 text-center ${dark ? 'border-[#1a1a1a]' : 'border-gray-200'}`}>
+                                    <span className="text-3xl mb-3 block">⚡</span>
+                                    <p className={`font-mono text-sm font-bold ${dark ? 'text-[#444]' : 'text-gray-400'}`}>No custom actions yet</p>
+                                    <p className={`font-mono text-xs mt-1 ${mutedText}`}>Create a sequence to control multiple pins at once</p>
+                                    <button
+                                        onClick={() => { setEditingAction(null); setShowActionEditor(true); }}
+                                        className="mt-4 px-4 py-2 rounded-xl font-mono text-xs font-bold bg-orange-500 text-black hover:bg-orange-400 transition-all">
+                                        + Create First Action
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {customActions.map(action => (
+                                        <div key={action.id}
+                                            className={`flex items-center gap-4 p-4 border rounded-xl ${dark ? 'border-[#1a1a2a] bg-[#0d0d15]' : 'border-gray-100 bg-gray-50'}`}>
+                                            <span className="text-2xl">{action.icon}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`font-mono font-bold text-sm ${dark ? 'text-white' : 'text-gray-900'}`}>{action.name}</p>
+                                                <p className={`font-mono text-[10px] ${mutedText}`}>
+                                                    {action.onSequence?.length || 0} ON steps · {action.offSequence?.length || 0} OFF steps · size: {action.widgetSize || 'lg'}
+                                                </p>
+                                            </div>
+                                            <div className="flex gap-2 shrink-0">
+                                                <button
+                                                    onClick={() => { setEditingAction(action); setShowActionEditor(true); }}
+                                                    className={`p-2 rounded-lg border transition-all ${dark ? 'border-[#333] text-[#555] hover:text-orange-500 hover:border-orange-500/40' : 'border-gray-200 text-gray-400 hover:text-orange-500'}`}>
+                                                    <Edit2 className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteAction(action.id)}
+                                                    className={`p-2 rounded-lg border transition-all ${dark ? 'border-[#333] text-[#555] hover:text-red-500 hover:border-red-500/40' : 'border-gray-200 text-gray-400 hover:text-red-500'}`}>
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </motion.div>
                 )}
 
@@ -1263,6 +1398,19 @@ ${heartbeatFields}
                 }
             </AnimatePresence >
         </div >
+
+        {/* Custom Action Editor Modal */}
+        <AnimatePresence>
+            {showActionEditor && (
+                <CustomActionEditor
+                    action={editingAction}
+                    pins={device?.pins || []}
+                    onSave={handleSaveAction}
+                    onClose={() => { setShowActionEditor(false); setEditingAction(null); }}
+                    dark={dark}
+                />
+            )}
+        </AnimatePresence>
     );
 }
 
