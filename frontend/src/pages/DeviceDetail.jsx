@@ -310,8 +310,8 @@ export default function DeviceDetail() {
         const board = device.board || 'esp32';
         const isArduino = ['uno', 'nano', 'mega'].includes(board);
         const isESP8266 = board === 'esp8266';
-        const ssid = device.wifiSSID || 'YOUR_WIFI_SSID';
-        const pass = device.wifiPassword || 'YOUR_WIFI_PASSWORD';
+        const ssid = device.wifiSSID || 'demo';
+        const pass = device.wifiPassword || '12345678';
         const isUSB = device.mode === 'usb';
 
         const pinMacroFn = (p) => `PIN_${sanitize(p.label)}`;
@@ -797,10 +797,7 @@ ${heartbeatFields}
                             <Copy className="w-4 h-4" />
                         </button>
                     </div>
-                    <button onClick={() => setShowWifi(!showWifi)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all shrink-0 ${showWifi ? 'bg-orange-500/20 border-orange-500/40 text-orange-400' : dark ? 'border-[#222] text-[#555] hover:text-white' : 'border-gray-300 text-gray-500 hover:text-gray-900'}`}>
-                        <Wifi className="w-3.5 h-3.5" /> WiFi Credentials
-                    </button>
+                    {/* WiFi Credentials button removed as panel is now permanent */}
                     {/* OTA Toggle — always visible, ESP32 only */}
                     {!isSerial && !isUSB && device.board === 'esp32' && (
                         <button
@@ -821,31 +818,39 @@ ${heartbeatFields}
             )}
 
             {/* WiFi Credentials Panel */}
-            <AnimatePresence>
-                {showWifi && !isSerial && !isUSB && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                        className={`mb-4 p-5 border border-orange-500/20 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-3 items-end overflow-hidden ${card}`}>
-                        <div>
-                            <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>WiFi SSID</label>
-                            <input value={wifiSSID} onChange={e => setWifiSSID(e.target.value)} placeholder="Your WiFi name"
-                                className={`w-full border outline-none rounded-lg px-3 py-2 font-mono text-sm transition-colors ${inputCls}`} />
+            {!isSerial && !isUSB && (
+                <div className={`mb-4 p-5 border border-orange-500/20 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-3 items-end ${card}`}>
+                    <div>
+                        <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>WiFi SSID</label>
+                        <input value={wifiSSID} onChange={e => setWifiSSID(e.target.value)} placeholder="demo"
+                            className={`w-full border outline-none rounded-lg px-3 py-2 font-mono text-sm transition-colors ${inputCls}`} />
+                    </div>
+                    <div>
+                        <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>WiFi Password</label>
+                        <div className="relative">
+                            <input value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} type={showWifiPass ? 'text' : 'password'} placeholder="12345678"
+                                className={`w-full border outline-none rounded-lg px-3 py-2 pr-9 font-mono text-sm transition-colors ${inputCls}`} />
+                            <button onClick={() => setShowWifiPass(!showWifiPass)} className={`absolute right-2.5 top-1/2 -translate-y-1/2 ${mutedText} hover:text-orange-500`}>
+                                {showWifiPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
                         </div>
-                        <div>
-                            <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>WiFi Password</label>
-                            <div className="relative">
-                                <input value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} type={showWifiPass ? 'text' : 'password'} placeholder="••••••••"
-                                    className={`w-full border outline-none rounded-lg px-3 py-2 pr-9 font-mono text-sm transition-colors ${inputCls}`} />
-                                <button onClick={() => setShowWifiPass(!showWifiPass)} className={`absolute right-2.5 top-1/2 -translate-y-1/2 ${mutedText} hover:text-orange-500`}>
-                                    {showWifiPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                            </div>
-                        </div>
-                        <p className={`col-span-full font-mono text-[10px] ${mutedText}`}>
-                            WiFi credentials are stored securely and auto-filled in generated code.
-                        </p>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    </div>
+                    <div>
+                        <button onClick={async () => {
+                            try {
+                                await axios.put(`${API}/api/devices/${id}`, { wifiSSID, wifiPassword }, { headers });
+                                setDevice(prev => ({ ...prev, wifiSSID, wifiPassword }));
+                                setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
+                            } catch { }
+                        }} className="w-full h-[38px] rounded-lg bg-orange-500 hover:bg-orange-600 text-black font-mono font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                            <Check className="w-4 h-4" /> Save WiFi
+                        </button>
+                    </div>
+                    <p className={`col-span-full font-mono text-[10px] ${mutedText}`}>
+                        WiFi credentials are stored securely and auto-filled in generated code.
+                    </p>
+                </div>
+            )}
 
             {/* Tabs */}
             <div className={`flex gap-1 p-1 border rounded-xl mb-6 overflow-x-auto ${card}`}>
@@ -991,7 +996,7 @@ ${heartbeatFields}
                             <div>
                                 <h3 className={`font-mono font-bold uppercase tracking-widest ${dark ? 'text-white' : 'text-gray-900'}`}>Generated ESP32 Code</h3>
                                 <p className={`font-mono text-xs mt-0.5 ${mutedText}`}>
-                                    Mode: <span className={isSerial ? 'text-blue-400' : 'text-orange-500'}>{isSerial ? 'Bluetooth/Serial Bare-Metal' : 'WiFi / Cloud Polling'}</span>
+                                    Mode: <span className={isSerial ? 'text-blue-400' : 'text-orange-500'}>{isSerial ? 'Bluetooth/Serial Bare-Metal' : 'WiFi / MQTT Real-time'}</span>
                                 </p>
                             </div>
                             <button onClick={copyCode}
