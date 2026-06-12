@@ -15,6 +15,7 @@ const mqtt = require('mqtt');
 
 const User = require('./models/User');
 const Device = require('./models/Device');
+const Settings = require('./models/Settings');
 const { authenticate, requireAdmin } = require('./middleware/auth');
 
 const app = express();
@@ -179,10 +180,23 @@ app.post('/api/auth/register', async (req, res) => {
         username = username?.trim();
         const exists = await User.findOne({ username });
         if (exists) return res.status(400).json({ error: 'Username already exists' });
+        
+        // Check global autoApprove setting
+        let isApproved = false;
+        const autoApproveSetting = await Settings.findOne({ key: 'autoApprove' });
+        if (autoApproveSetting && autoApproveSetting.value === true) {
+            isApproved = true;
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
-        const user = new User({ username, password: hashedPassword, role: 'user', isApproved: false });
+        const user = new User({ username, password: hashedPassword, role: 'user', isApproved });
         await user.save();
-        res.status(201).json({ message: 'Registration successful, pending admin approval.' });
+        
+        if (isApproved) {
+            res.status(201).json({ message: 'Registration successful, account auto-approved.' });
+        } else {
+            res.status(201).json({ message: 'Registration successful, pending admin approval.' });
+        }
     } catch (error) {
         res.status(500).json({ error: 'Registration failed' });
     }
@@ -224,11 +238,35 @@ app.post('/api/auth/change-password', authenticate, async (req, res) => {
 
 // ─── Admin Routes ─────────────────────────────────────────────────────────────
 app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
-    const users = await User.find({}, '-password');
-    res.json(users);
+    try {
+        const users = await User.find({}, '-password').sort({ createdAt: -1 });
+        res.json(users);
+    } catch (error) { res.status(500).json({ error: 'Failed to fetch users' }); }
 });
 
-// Admin create user directly — MUST be before /:id routes
+// Settings Endpoints
+app.get('/api/admin/settings', authenticate, requireAdmin, async (req, res) => {
+    try {
+        const settings = await Settings.find({});
+        res.json(settings);
+    } catch (error) { res.status(500).json({ error: 'Failed to fetch settings' }); }
+});
+
+app.put('/api/admin/settings', authenticate, requireAdmin, async (req, res) => {
+    try {
+        const { key, value } = req.body;
+        if (!key) return res.status(400).json({ error: 'Setting key is required' });
+        
+        await Settings.findOneAndUpdate(
+            { key },
+            { value },
+            { upsert: true, new: true }
+        );
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ error: 'Failed to update setting' }); }
+});
+
+// Admin create user directly
 app.post('/api/admin/users/create', authenticate, requireAdmin, async (req, res) => {
     try {
         let { username, password, role } = req.body;

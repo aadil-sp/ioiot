@@ -16,6 +16,7 @@ export default function AdminDashboard() {
     const [tab, setTab] = useState('devices'); // 'devices' | 'users' | 'notify'
     const [devices, setDevices] = useState([]);
     const [users, setUsers] = useState([]);
+    const [autoApprove, setAutoApprove] = useState(false);
     const [loading, setLoading] = useState(true);
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
 
@@ -49,12 +50,15 @@ export default function AdminDashboard() {
     const fetchAll = async () => {
         setLoading(true);
         try {
-            const [devRes, usrRes] = await Promise.all([
+            const [devRes, usrRes, setRes] = await Promise.all([
                 axios.get(`${API}/api/admin/devices`, { headers }),
-                axios.get(`${API}/api/admin/users`, { headers })
+                axios.get(`${API}/api/admin/users`, { headers }),
+                axios.get(`${API}/api/admin/settings`, { headers })
             ]);
             setDevices(devRes.data);
             setUsers(usrRes.data);
+            const aaSetting = setRes.data.find(s => s.key === 'autoApprove');
+            if (aaSetting) setAutoApprove(aaSetting.value);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
@@ -68,6 +72,17 @@ export default function AdminDashboard() {
         if (!confirm('Delete this user and all their devices?')) return;
         await axios.delete(`${API}/api/admin/users/${id}`, { headers });
         setUsers(prev => prev.filter(u => u._id !== id));
+    };
+
+    const toggleAutoApprove = async () => {
+        const newValue = !autoApprove;
+        setAutoApprove(newValue);
+        try {
+            await axios.put(`${API}/api/admin/settings`, { key: 'autoApprove', value: newValue }, { headers });
+        } catch (err) {
+            console.error('Failed to update setting', err);
+            setAutoApprove(!newValue); // revert
+        }
     };
 
     const toggleLive = async (deviceId) => {
@@ -235,8 +250,21 @@ export default function AdminDashboard() {
                 </div>
             ) : tab === 'users' ? (
                 <div className="space-y-4">
-                    {/* Create User Button */}
-                    <div className="flex justify-end">
+                    {/* Header actions */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 bg-[#0e0e0e] border border-[#2a2a2a] rounded-xl p-4">
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={toggleAutoApprove}
+                                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${autoApprove ? 'bg-orange-500' : 'bg-[#333]'}`}
+                            >
+                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${autoApprove ? 'left-6.5' : 'left-0.5'}`} />
+                            </button>
+                            <div>
+                                <h3 className="text-white font-mono font-bold text-sm">Auto-Approve Users</h3>
+                                <p className="text-[#888] font-mono text-xs">New registrations will be instantly approved</p>
+                            </div>
+                        </div>
+
                         <button onClick={() => setShowCreateUser(true)}
                             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-black font-bold text-sm hover:bg-orange-400 transition-all shadow-[0_0_20px_#f9731655]">
                             <UserPlus className="w-4 h-4" /> Create User
