@@ -747,6 +747,13 @@ ${heartbeatFields}
             console.error(err);
             addLog('❌ Flashing failed: ' + err.message, true);
         } finally {
+            if (transport) {
+                try {
+                    await transport.disconnect();
+                } catch (e) {
+                    console.error('Error disconnecting transport:', e);
+                }
+            }
             setFlashing(false);
         }
     };
