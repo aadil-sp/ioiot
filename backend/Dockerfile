@@ -21,6 +21,7 @@ RUN arduino-cli config init && \
     (for i in 1 2 3 4 5; do arduino-cli core install esp32:esp32 && break || sleep 15; done) && \
     (for i in 1 2 3 4 5; do arduino-cli lib install "ArduinoJson" && break || sleep 15; done) && \
     (for i in 1 2 3 4 5; do arduino-cli lib install "ESP32Servo" && break || sleep 15; done) && \
+    (for i in 1 2 3 4 5; do arduino-cli lib install "PubSubClient" && break || sleep 15; done) && \
     echo "Arduino CLI setup complete"
 
 # Save boot_app0.bin path so the compile endpoint can find it at runtime
