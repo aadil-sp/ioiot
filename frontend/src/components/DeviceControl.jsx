@@ -185,7 +185,7 @@ export default function DeviceControl({ deviceId, isAdmin, deviceName }) {
                     <Radar className="absolute w-64 h-64 text-orange-500/5 stroke-[0.5] right-[-50px]" />
                     <div className="text-center relative z-10">
                         <span className="text-[#555] font-mono text-xs tracking-widest block mb-2 uppercase">Protocol Version</span>
-                        <span className="text-white font-mono text-xl font-bold bg-[#111] px-4 py-1 rounded-md border border-[#333]">v1.0.4</span>
+                        <span className="text-white font-mono text-xl font-bold bg-[#111] px-4 py-1 rounded-md border border-[#333]">v2.0.0-MQTT</span>
                     </div>
                 </div>
             </div>

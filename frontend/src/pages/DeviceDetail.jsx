@@ -312,7 +312,6 @@ export default function DeviceDetail() {
         const isESP8266 = board === 'esp8266';
         const ssid = device.wifiSSID || 'YOUR_WIFI_SSID';
         const pass = device.wifiPassword || 'YOUR_WIFI_PASSWORD';
-        const isSerial = device.mode === 'serial';
         const isUSB = device.mode === 'usb';
 
         const pinMacroFn = (p) => `PIN_${sanitize(p.label)}`;
@@ -404,184 +403,126 @@ ${applyLogic || '    // Configure pins in Pin Config tab first'}
 }`;
         }
 
-        // ── BLUETOOTH / SERIAL MODE ───────────────────────────────────────
-        const stateVarsBT = device.pins
-            .filter(p => p.type === 'digital' && p.mode === 'OUTPUT')
-            .map(p => `bool ${pinMacroFn(p)}_state = false;`).join('\n');
-        const commandCases = device.pins
-            .filter(p => p.commandChar && p.mode === 'OUTPUT')
-            .map(p => {
-                const macro = pinMacroFn(p);
-                if (p.type === 'servo') return `    case '${p.commandChar.toUpperCase()}':\n      myServo_${sanitizeFn(p.label)}.write(90);\n      Serial.println("${p.label}: 90 deg"); break;`;
-                if (p.type === 'pwm') return `    case '${p.commandChar.toUpperCase()}':\n      analogWrite(${macro}, 128);\n      Serial.println("${p.label}: speed set"); break;`;
-                return `    case '${p.commandChar.toUpperCase()}':\n      ${macro}_state = !${macro}_state;\n      digitalWrite(${macro}, ${macro}_state ? HIGH : LOW);\n      Serial.println("${p.label}: " + String(${macro}_state ? "ON" : "OFF")); break;`;
-            }).join('\n');
-        const charMap = device.pins.filter(p => p.commandChar && p.mode === 'OUTPUT')
-            .map(p => `//   '${p.commandChar.toUpperCase()}' → ${p.label}`).join('\n');
-
-        if (isSerial) {
-            const btInclude = board === 'esp8266' ? '' : '\n#include "BluetoothSerial.h"\nBluetoothSerial SerialBT;';
-            const btBegin = board === 'esp8266' ? '' : `  SerialBT.begin("${device.name.replace(/\s+/g, '_')}");`;
-            const btRead = board === 'esp8266' ? '' : '\n  if (SerialBT.available()) received = SerialBT.read();';
-            return `// ================================================================
-// ${device.name} — IoIoT Bluetooth/Serial Mode (${board.toUpperCase()})
-// COMMAND MAP:\n${charMap || '// (no output pins defined)'}
-// ================================================================
-
-${servoIncludes}${btInclude}
-
-${pinDefs}
-${servoObjects ? '\n' + servoObjects : ''}
-${stateVarsBT ? '\n' + stateVarsBT : ''}
-
-void setup() {
-  Serial.begin(115200);
-${setupPins}
-${btBegin}
-  Serial.println("Ready — ${device.name}");
-}
-
-void loop() {
-  char received = 0;
-  if (Serial.available()) received = Serial.read();${btRead}
-  if (received) {
-    received = toupper(received);
-    switch (received) {
-${commandCases || '      // Add pins in Pin Config tab'}
-      default: break;
-    }
-  }
-  delay(10);
-}`;
-        }
-
-        // ── WIFI CLOUD MODE ───────────────────────────────────────────────
-        const stateVarsWifi = device.pins.filter(p => p.type === 'digital' && p.mode === 'OUTPUT')
-            .map(p => `bool last_${sanitizeFn(p.label)} = false;`).join('\n');
-        const applyLogicWifi = device.pins.filter(p => p.mode === 'OUTPUT').map(p => {
+        // ── MQTT CLOUD MODE ───────────────────────────────────────────────
+        const mqttCallbackCases = device.pins.filter(p => p.mode === 'OUTPUT').map(p => {
             const macro = pinMacroFn(p);
             const key = p.widgetKey;
-            if (p.type === 'servo') return `      { int angle = doc["${key}"] | 90; angle = constrain(angle, ${p.min || 0}, ${p.max || 180}); myServo_${sanitizeFn(p.label)}.write(angle); }`;
-            if (p.type === 'pwm') return `      { int spd = doc["${key}"] | 0; analogWrite(${macro}, spd); }`;
-            if (p.type === 'digital') return `      { bool v = doc["${key}"] | false; if(v != last_${sanitizeFn(p.label)}) { digitalWrite(${macro}, v ? HIGH : LOW); last_${sanitizeFn(p.label)} = v; } }`;
-            return '';
+            if (p.type === 'servo') return `    if (doc.containsKey("${key}")) { int a = doc["${key}"].as<int>(); a = constrain(a, ${p.min || 0}, ${p.max || 180}); myServo_${sanitizeFn(p.label)}.write(a); }`;
+            if (p.type === 'pwm') return `    if (doc.containsKey("${key}")) { analogWrite(${macro}, doc["${key}"].as<int>()); }`;
+            return `    if (doc.containsKey("${key}")) { digitalWrite(${macro}, doc["${key}"].as<bool>() ? HIGH : LOW); }`;
         }).filter(Boolean).join('\n');
 
-        const fastConnectLib = isESP8266 ? '' : '#include <Preferences.h>\nPreferences prefs;';
-        const wifiLib = isESP8266 ? '#include <ESP8266WiFi.h>\n#include <ESP8266HTTPClient.h>' : '#include <WiFi.h>\n#include <HTTPClient.h>\n#include <WiFiClientSecure.h>\n#include "esp_wifi.h"';
-        const otaLib = device.otaEnabled && !isESP8266 ? '#include <HTTPUpdate.h>\n' : '';
-        const wifiPower = isESP8266 ? '  WiFi.setOutputPower(10);' : '  esp_wifi_set_max_tx_power(34);';
-        const boardName = board === 'esp8266' ? 'ESP8266' : 'ESP32';
+        const heartbeatFields = device.pins.map(p => {
+            const key = p.widgetKey;
+            if (p.type === 'digital') return `    doc["${key}"] = digitalRead(${pinMacroFn(p)}) == HIGH;`;
+            if (p.type === 'pwm') return `    // doc["${key}"] = currentPwmValue; // track if needed`;
+            if (p.type === 'analog_input') return `    doc["${key}"] = analogRead(${pinMacroFn(p)});`;
+            return `    // doc["${key}"] = ...;`;
+        }).join('\n');
+
+        const wifiLibMqtt = isESP8266 ? '#include <ESP8266WiFi.h>' : '#include <WiFi.h>';
+        const boardNameMqtt = board === 'esp8266' ? 'ESP8266' : 'ESP32';
 
         return `// ================================================================
-// ${device.name} — IoIoT WiFi Cloud Mode (${boardName})
-// Optimized for Fast Connect (stores BSSID/Channel in NVS)
+// ${device.name} — IoIoT MQTT Mode (${boardNameMqtt})
+// Real-time control via MQTT — no polling, instant response!
+// ================================================================
+// Required Libraries (Arduino Library Manager):
+//   - PubSubClient  by Nick O'Leary
+//   - ArduinoJson   by Benoit Blanchon
+// MQTT Topics:
+//   Subscribe: ioiot/${device.deviceId}/command  <- receives commands
+//   Publish:   ioiot/${device.deviceId}/state    -> sends heartbeat/sensors
+//   LWT:       ioiot/${device.deviceId}/status   -> offline detection
 // ================================================================
 
-${servoIncludes}${wifiLib}
-${otaLib}${fastConnectLib}
+${servoIncludes}${wifiLibMqtt}
+#include <PubSubClient.h>
 #include <ArduinoJson.h>
 
 const char* ssid      = "${ssid}";
 const char* password  = "${pass}";
-const char* AUTH_TOKEN = "${device.authToken}";
-const char* SERVER_URL = "${API || 'https://aadilsp-ioiot-backend.hf.space'}/api/esp/state";
-const char* VERSION    = "${Date.now()}"; // Used for OTA tracking
+const char* DEVICE_ID = "${device.deviceId}";
+const char* MQTT_HOST = "broker.hivemq.com";
+const int   MQTT_PORT = 1883;
 
-// ── Persistent global connection (no SSL re-handshake every request) ──────────
-${isESP8266 ? 'WiFiClient client;' : 'NetworkClientSecure client;'}
-HTTPClient http;
-bool httpStarted = false;
+char TOPIC_CMD[64];
+char TOPIC_STATE[64];
+char TOPIC_STATUS[64];
 
-// ── Pin Definitions ────────────────────────────────────────────
+// -- Pin Definitions ---------------------------------------------------
 ${pinDefs}
 
 ${servoObjects || '// (no servo pins)'}
-${stateVarsWifi ? '\n' + stateVarsWifi : ''}
 
-void connectServer() {
-  if (httpStarted) { http.end(); httpStarted = false; }
-  ${!isESP8266 ? 'client.setInsecure();' : ''}
-  http.begin(client, SERVER_URL);
-  http.addHeader("x-auth-token", AUTH_TOKEN);
-  http.setReuse(true);      // Keep TCP alive
-  http.setTimeout(3000);
-  httpStarted = true;
-  Serial.println("Server connection ready.");
+WiFiClient   wifiClient;
+PubSubClient mqttClient(wifiClient);
+unsigned long lastHeartbeat = 0;
+const long    HEARTBEAT_INTERVAL = 5000;
+
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+    StaticJsonDocument<512> doc;
+    if (deserializeJson(doc, payload, length)) return;
+    Serial.print("CMD: "); serializeJson(doc, Serial); Serial.println();
+
+${mqttCallbackCases || '    // Configure pins in Pin Config tab'}
+}
+
+void connectWifi() {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    Serial.print("WiFi");
+    int t = 0;
+    while (WiFi.status() != WL_CONNECTED && t++ < 40) { delay(500); Serial.print("."); }
+    if (WiFi.status() == WL_CONNECTED) Serial.println(" OK: " + WiFi.localIP().toString());
+    else { Serial.println(" FAILED. Restarting."); ESP.restart(); }
+}
+
+void connectMqtt() {
+    while (!mqttClient.connected()) {
+        String cid = String("ioiot-") + String(DEVICE_ID) + "-" + String(random(0xffff), HEX);
+        Serial.print("MQTT...");
+        if (mqttClient.connect(cid.c_str(), nullptr, nullptr, TOPIC_STATUS, 1, true, "{\\"online\\":false}")) {
+            Serial.println(" connected.");
+            mqttClient.subscribe(TOPIC_CMD, 1);
+            mqttClient.publish(TOPIC_STATUS, "{\\"online\\":true}", true);
+        } else {
+            Serial.print(" rc="); Serial.print(mqttClient.state()); Serial.println(" retry 3s");
+            delay(3000);
+        }
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(${isESP8266 ? '1000' : '2000'});
+    Serial.begin(115200);
+    snprintf(TOPIC_CMD,    sizeof(TOPIC_CMD),    "ioiot/%s/command", DEVICE_ID);
+    snprintf(TOPIC_STATE,  sizeof(TOPIC_STATE),  "ioiot/%s/state",   DEVICE_ID);
+    snprintf(TOPIC_STATUS, sizeof(TOPIC_STATUS), "ioiot/%s/status",  DEVICE_ID);
 
 ${setupPins}
 
-  WiFi.mode(WIFI_STA);
-  Serial.print("Connecting to WiFi");
-
-  ${!isESP8266 ? `
-  Preferences prefs;
-  prefs.begin("wifi-cfg", true);
-  int ch = prefs.getInt("ch", 0);
-  uint8_t bssid[6];
-  bool hasBssid = prefs.getBytes("bssid", bssid, 6) == 6;
-  prefs.end();
-  if (ch > 0 && hasBssid) { Serial.print(" (Fast)"); WiFi.begin(ssid, password, ch, bssid); }
-  else { WiFi.begin(ssid, password); }
-  ` : 'WiFi.begin(ssid, password);'}
-
-${wifiPower}
-  int tries = 0;
-  while (WiFi.status() != WL_CONNECTED && tries++ < 40) {
-    delay(500); Serial.print(".");
-    ${!isESP8266 ? 'if (tries == 12) { WiFi.disconnect(); WiFi.begin(ssid, password); }' : ''}
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\\n\u2713 Connected: " + WiFi.localIP().toString());
-    ${!isESP8266 ? `
-    Preferences prefs2;
-    prefs2.begin("wifi-cfg", false);
-    prefs2.putInt("ch", WiFi.channel());
-    prefs2.putBytes("bssid", WiFi.BSSID(), 6);
-    prefs2.end();` : ''}
-    connectServer(); // Open persistent connection once
-  } else {
-    Serial.println("\\n\u2717 WiFi failed. Restarting...");
-    ESP.restart();
-  }
+    connectWifi();
+    mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+    mqttClient.setCallback(onMqttMessage);
+    mqttClient.setKeepAlive(60);
+    mqttClient.setBufferSize(512);
+    connectMqtt();
+    Serial.println("IoIoT MQTT Ready.");
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    WiFi.reconnect(); delay(5000); return;
-  }
+    if (WiFi.status() != WL_CONNECTED) connectWifi();
+    if (!mqttClient.connected()) connectMqtt();
+    mqttClient.loop();
 
-  // Reuse existing connection — no SSL handshake overhead
-  int code = http.GET();
-
-  if (code == 200) {
-    StaticJsonDocument<1024> doc;
-    if (!deserializeJson(doc, http.getString())) {
-${applyLogicWifi || '      // Configure pins in Pin Config tab'}
-${device.otaEnabled ? `
-      if (doc.containsKey("_ota")) {
-        String v = doc["_ota"]["ver"];
-        if (v != String(VERSION)) {
-          String url = doc["_ota"]["url"];
-          Serial.println("OTA: " + v);
-          httpUpdate.update(client, url);
-        }
-      }` : ''}
+    if (millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
+        lastHeartbeat = millis();
+        StaticJsonDocument<512> doc;
+        doc["online"] = true;
+${heartbeatFields}
+        char buf[512]; serializeJson(doc, buf);
+        mqttClient.publish(TOPIC_STATE, buf);
     }
-  } else {
-    // Connection dropped — reconnect
-    Serial.println("Reconnecting... code=" + String(code));
-    delay(1000);
-    connectServer();
-  }
-  // No http.end() — keep-alive!
-  delay(50); // 50ms polling, ~20 polls/sec, very fast
 }`;
     };
     const pinMacro = (p) => `PIN_${sanitize(p.label)}`;

@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const mqtt = require('mqtt');
 
 const User = require('./models/User');
 const Device = require('./models/Device');
@@ -28,6 +29,102 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/iot-platform';
+
+// ─── MQTT Broker Setup ────────────────────────────────────────────────────────
+const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://broker.hivemq.com';
+const mqttClient = mqtt.connect(MQTT_BROKER, {
+    clientId: `ioiot-backend-${crypto.randomBytes(4).toString('hex')}`,
+    keepalive: 60,
+    reconnectPeriod: 3000,
+    connectTimeout: 10000,
+});
+
+mqttClient.on('connect', () => {
+    console.log(`MQTT connected to ${MQTT_BROKER}`);
+    // Subscribe to all device state reports and status (LWT) topics
+    mqttClient.subscribe('ioiot/+/state', { qos: 1 });
+    mqttClient.subscribe('ioiot/+/status', { qos: 1 });
+});
+
+mqttClient.on('error', (err) => {
+    console.error('MQTT error:', err.message);
+});
+
+mqttClient.on('reconnect', () => {
+    console.log('MQTT reconnecting...');
+});
+
+// ─── MQTT → Socket.io Bridge ──────────────────────────────────────────────────
+// When ESP32 publishes state/sensor data, forward to web dashboard via socket.io
+mqttClient.on('message', async (topic, payload) => {
+    try {
+        const parts = topic.split('/'); // ['ioiot', deviceId, 'state'|'status']
+        if (parts.length < 3 || parts[0] !== 'ioiot') return;
+
+        const deviceId = parts[1];
+        const type = parts[2];
+
+        let data;
+        try { data = JSON.parse(payload.toString()); } catch { return; }
+
+        if (type === 'state') {
+            // Device is alive — mark online and process sensor values
+            const device = await Device.findOne({ deviceId });
+            if (!device) return;
+
+            const wasOffline = !device.isConnected;
+            device.isConnected = true;
+            device.lastSeen = new Date();
+
+            // Update INPUT pin values from device reports
+            const stateChanges = {};
+            Object.entries(data).forEach(([key, val]) => {
+                const pin = device.pins.find(p => p.widgetKey === key);
+                if (pin && pin.mode === 'INPUT') {
+                    pin.value = val;
+                    device.state.set(key, val);
+                    stateChanges[key] = val;
+                }
+            });
+
+            await device.save();
+
+            if (wasOffline) {
+                io.emit('deviceStatusUpdate', { deviceId, isConnected: true });
+            }
+
+            if (Object.keys(stateChanges).length > 0) {
+                io.emit('deviceStateUpdate', {
+                    deviceId,
+                    state: Object.fromEntries(device.state)
+                });
+            }
+
+        } else if (type === 'status') {
+            // LWT message — device went offline or came online
+            const device = await Device.findOne({ deviceId });
+            if (!device) return;
+
+            const online = data.online === true;
+            const changed = device.isConnected !== online;
+            if (changed) {
+                device.isConnected = online;
+                if (online) device.lastSeen = new Date();
+                await device.save();
+                io.emit('deviceStatusUpdate', { deviceId, isConnected: online });
+            }
+        }
+    } catch (err) {
+        console.error('MQTT message handler error:', err);
+    }
+});
+
+// Helper: publish a command to a device via MQTT
+function publishCommand(deviceId, widgetKey, value) {
+    const topic = `ioiot/${deviceId}/command`;
+    const payload = JSON.stringify({ [widgetKey]: value });
+    mqttClient.publish(topic, payload, { qos: 1, retain: false });
+}
 
 // ─── Connect to MongoDB ──────────────────────────────────────────────────────
 mongoose.connect(MONGO_URI).then(async () => {
@@ -131,7 +228,7 @@ app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
     res.json(users);
 });
 
-// Admin create user directly — MUST be before /:id routes or Express matches "create" as :id
+// Admin create user directly — MUST be before /:id routes
 app.post('/api/admin/users/create', authenticate, requireAdmin, async (req, res) => {
     try {
         let { username, password, role } = req.body;
@@ -169,7 +266,6 @@ app.delete('/api/admin/users/:id', authenticate, requireAdmin, async (req, res) 
     res.json({ message: 'User deleted' });
 });
 
-
 // Admin can see ALL devices across all users
 app.get('/api/admin/devices', authenticate, requireAdmin, async (req, res) => {
     const devices = await Device.find().populate('owner', 'username role');
@@ -177,7 +273,6 @@ app.get('/api/admin/devices', authenticate, requireAdmin, async (req, res) => {
 });
 
 // ─── Device Routes ─────────────────────────────────────────────────────────────
-// Get devices: own devices + live devices for users, all for admins
 app.get('/api/devices', authenticate, async (req, res) => {
     try {
         let devices;
@@ -203,7 +298,7 @@ app.post('/api/devices', authenticate, async (req, res) => {
         const device = await Device.create({
             deviceId,
             name: name || 'My New Device',
-            mode: mode || 'wifi',
+            mode: mode || 'mqtt',
             board: board || 'esp32',
             owner: req.user.id,
             pins: [],
@@ -232,7 +327,6 @@ app.put('/api/devices/:id', authenticate, async (req, res) => {
         if (wifiPassword !== undefined) device.wifiPassword = wifiPassword;
         if (mode !== undefined) device.mode = mode;
         if (otaEnabled !== undefined) device.otaEnabled = otaEnabled;
-        // isLive can be updated via PUT by admin only
         if (isLive !== undefined && req.user.role === 'admin') device.isLive = isLive;
         await device.save();
         res.json(device);
@@ -280,14 +374,12 @@ app.put('/api/devices/:id/pins', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
-        // Use _id.toString() to handle populated and unpopulated owner
         const ownerId = (device.owner?._id || device.owner)?.toString();
         if (ownerId !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
         const { pins } = req.body;
         device.pins = pins;
-        // Sync state map from pins
         pins.forEach(p => device.state.set(p.widgetKey, p.value));
         await device.save();
         io.emit('deviceConfigUpdate', { deviceId: device.deviceId, pins: device.pins });
@@ -298,7 +390,7 @@ app.put('/api/devices/:id/pins', authenticate, async (req, res) => {
     }
 });
 
-// Control a pin (toggle or set value)
+// Control a pin (toggle or set value) — REST endpoint
 app.post('/api/devices/:id/control', authenticate, async (req, res) => {
     try {
         const { widgetKey, value } = req.body;
@@ -308,14 +400,16 @@ app.post('/api/devices/:id/control', authenticate, async (req, res) => {
         if (ownerIdCtrl !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
-        // Update pin value in the pins array
         const pinIndex = device.pins.findIndex(p => p.widgetKey === widgetKey);
         if (pinIndex !== -1) device.pins[pinIndex].value = value;
 
-        // Also update state map for ESP32 polling
         device.state.set(widgetKey, value);
         device.markModified('pins');
-        // Instantly notify via socket before waiting for DB save
+
+        // Publish to MQTT immediately
+        publishCommand(device.deviceId, widgetKey, value);
+
+        // Notify web clients via socket.io
         io.emit('deviceStateUpdate', {
             deviceId: device.deviceId,
             widgetKey,
@@ -341,7 +435,10 @@ app.post('/api/devices/:id/toggle', authenticate, async (req, res) => {
         device.state.set(toggleType, state);
         const pin = device.pins.find(p => p.widgetKey === toggleType);
         if (pin) pin.value = state;
-        // Instantly notify via socket
+
+        // Publish to MQTT
+        publishCommand(device.deviceId, toggleType, state);
+
         io.emit('deviceStateUpdate', {
             deviceId: device.deviceId,
             widgetKey: toggleType,
@@ -356,128 +453,14 @@ app.post('/api/devices/:id/toggle', authenticate, async (req, res) => {
     }
 });
 
-// ─── ESP32 Auth Polling ────────────────────────────────────────────────────
-// ESP32 polls this with Auth Token header
-app.get('/api/esp/state', async (req, res) => {
-    try {
-        const token = req.headers['x-auth-token'] || req.query.token;
-        if (!token) return res.status(401).json({ error: 'No auth token' });
-
-        const device = await Device.findOne({ authToken: token });
-        if (!device) return res.status(404).json({ error: 'Device not found' });
-
-        // Mark as online
-        const wasOffline = !device.isConnected;
-        device.isConnected = true;
-        device.lastSeen = new Date();
-        await device.save();
-
-        if (wasOffline) {
-            io.emit('deviceStatusUpdate', { deviceId: device.deviceId, isConnected: true });
-        }
-
-        // Return full readable state
-        const stateObj = {};
-        device.pins.forEach(pin => {
-            stateObj[pin.widgetKey] = pin.value;
-        });
-
-        // Add OTA info if available
-        if (device.otaEnabled && device.latestFirmware) {
-            stateObj._ota = {
-                url: `${req.protocol}://${req.get('host')}/api/esp/ota/${device.deviceId}`,
-                ver: device.latestFirmware.version
-            };
-        }
-
-        res.json(stateObj);
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Legacy ID-based polling (ESP32 from older firmware)
-app.get('/api/esp/:id/state', async (req, res) => {
-    try {
-        const device = await Device.findOne({ deviceId: req.params.id });
-        if (!device) return res.status(404).json({ error: 'Device not found' });
-
-        const wasOffline = !device.isConnected;
-        device.isConnected = true;
-        device.lastSeen = new Date();
-        await device.save();
-
-        if (wasOffline) {
-            io.emit('deviceStatusUpdate', { deviceId: device.deviceId, isConnected: true });
-        }
-
-        res.json(Object.fromEntries(device.state));
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// ESP32 reports sensor values back to server
-app.post('/api/esp/report', async (req, res) => {
-    try {
-        const token = req.headers['x-auth-token'] || req.query.token;
-        if (!token) return res.status(401).json({ error: 'No auth token' });
-
-        const device = await Device.findOne({ authToken: token });
-        if (!device) return res.status(404).json({ error: 'Device not found' });
-
-        const { values } = req.body; // { widgetKey: value, ... }
-        Object.entries(values).forEach(([key, val]) => {
-            const pin = device.pins.find(p => p.widgetKey === key);
-            if (pin && pin.mode === 'INPUT') pin.value = val;
-            device.state.set(key, val);
-        });
-        await device.save();
-
-        io.emit('deviceStateUpdate', { deviceId: device.deviceId, state: Object.fromEntries(device.state) });
-        res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: 'Report failed' });
-    }
-});
-
 // ─── Keep-Alive & Misc ────────────────────────────────────────────────────────
 app.get('/api/ping', (req, res) => {
     res.json({ status: 'active', timestamp: new Date() });
 });
 
-// ─── Offline Watchdog ─────────────────────────────────────────────────────────
-setInterval(async () => {
-    try {
-        const timeout = new Date(Date.now() - 10000);
-        const offlineDevices = await Device.find({
-            isConnected: true,
-            $or: [{ lastSeen: { $lt: timeout } }, { lastSeen: { $exists: false } }]
-        });
-        for (const dev of offlineDevices) {
-            dev.isConnected = false;
-            await dev.save();
-            io.emit('deviceStatusUpdate', { deviceId: dev.deviceId, isConnected: false });
-        }
-    } catch (e) { }
-}, 10000);
-
 // ─── Socket.io ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
-    socket.on('registerDevice', async (data) => {
-        try {
-            const device = await Device.findOne({ authToken: data.authToken || '' }) ||
-                await Device.findOne({ deviceId: data.deviceId || '' });
-            if (device) {
-                device.isConnected = true;
-                await device.save();
-                io.emit('deviceStatusUpdate', { deviceId: device.deviceId, isConnected: true });
-                socket.emit('initialState', Object.fromEntries(device.state));
-            }
-        } catch (err) { console.error(err); }
-    });
-
-    // --- INSTANT CONTROL VIA SOCKETS ---
+    // --- INSTANT CONTROL VIA SOCKETS (Web → MQTT → ESP32) ---
     socket.on('sendControl', async (data) => {
         try {
             const { deviceId, widgetKey, value, token } = data;
@@ -501,7 +484,10 @@ io.on('connection', (socket) => {
             device.state.set(widgetKey, value);
             device.markModified('pins');
 
-            // Instantly emit to all other clients (including the sender for confirmation if needed)
+            // 1. Publish command to MQTT broker → ESP32 gets it instantly
+            publishCommand(deviceId, widgetKey, value);
+
+            // 2. Broadcast to all web clients via socket.io
             io.emit('deviceStateUpdate', {
                 deviceId,
                 widgetKey,
@@ -509,7 +495,7 @@ io.on('connection', (socket) => {
                 state: Object.fromEntries(device.state)
             });
 
-            // Save to DB in background
+            // 3. Persist to DB
             await device.save();
         } catch (err) {
             console.error('Socket control error:', err);
@@ -524,26 +510,22 @@ app.use('/api/inkqueue', require('./routes/inkqueue'));
 
 // Basic health check
 app.get('/', (req, res) => {
-    res.send('<h1>IoIoT Platform v2.0</h1><p>Status: <span style="color: green;">Online</span></p><p>Backend is running on Hugging Face Spaces.</p>');
+    res.send('<h1>IoIoT Platform v2.0 — MQTT</h1><p>Status: <span style="color: green;">Online</span></p><p>Backend is running on Hugging Face Spaces.</p>');
 });
 
 // ─── ESP32 Compile Endpoint ──────────────────────────────────────────────────
-// Compiles Arduino sketch using arduino-cli and streams logs back as SSE.
-// Returns the compiled binary files as base64 for browser-side flashing via esptool-js.
 app.post('/api/compile', async (req, res) => {
     const { code, board = 'esp32:esp32:esp32' } = req.body;
     if (!code || !code.trim()) {
         return res.status(400).json({ error: 'No code provided' });
     }
 
-    // Check arduino-cli is available
     const checkCli = spawn('which', ['arduino-cli']);
     const cliAvailable = await new Promise(r => checkCli.on('close', c => r(c === 0)));
     if (!cliAvailable) {
         return res.status(503).json({ error: 'Compilation service not available. arduino-cli is not installed on this server.' });
     }
 
-    // Set SSE headers for streaming logs
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -554,7 +536,6 @@ app.post('/api/compile', async (req, res) => {
         try { res.write(`data: ${JSON.stringify({ type, data })}\n\n`); } catch { }
     };
 
-    // Create temp sketch directory
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ioiot-'));
     const sketchName = 'ioiot_device';
     const sketchDir = path.join(tempDir, sketchName);
@@ -587,7 +568,6 @@ app.post('/api/compile', async (req, res) => {
     child.stderr.on('data', (data) => {
         data.toString().split('\n').filter(l => l.trim()).forEach(l => {
             const line = l.trim();
-            // Filter out noise, only show meaningful errors
             if (!line.startsWith('Using board') && !line.startsWith('Using cache') && !line.includes('Skipping') && !line.includes('DEBUG')) {
                 sse('log', line);
             }
@@ -620,7 +600,6 @@ app.post('/api/compile', async (req, res) => {
                 catch { return null; }
             };
 
-            // Find boot_app0.bin from the ESP32 core installation
             let bootApp0Data = null;
             try {
                 const bootApp0Path = fs.readFileSync('/boot_app0_path.txt', 'utf8').trim();
@@ -630,10 +609,10 @@ app.post('/api/compile', async (req, res) => {
             } catch { }
 
             const flashFiles = [];
-            
+
             let bootloaderAddress = 0x1000;
             let sketchAddress = 0x10000;
-            
+
             if (board.includes('esp32c3') || board.includes('esp32s3')) {
                 bootloaderAddress = 0x0000;
             } else if (board.includes('esp8266')) {
@@ -660,20 +639,18 @@ app.post('/api/compile', async (req, res) => {
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
     });
 
-    // If client disconnects, kill the child process
     req.on('close', () => {
         try { child.kill('SIGTERM'); } catch { }
     });
 });
 
 // ─── OTA Firmware Storage ────────────────────────────────────────────────────
-// In a real prod environment, use S3. For this space, we'll store in a local 'firmware' folder.
 const firmwareDir = path.join(__dirname, 'firmware');
 if (!fs.existsSync(firmwareDir)) fs.mkdirSync(firmwareDir);
 
 app.post('/api/devices/:id/firmware', authenticate, async (req, res) => {
     try {
-        const { binary, version } = req.body; // binary is base64
+        const { binary, version } = req.body;
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
 
@@ -702,8 +679,6 @@ app.get('/api/esp/ota/:id', async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device || !device.latestFirmware) return res.status(404).send('No firmware');
-
-        // Simple security: check token in query if needed, but for now we rely on the unique deviceId
         res.sendFile(device.latestFirmware.filePath);
     } catch (err) {
         res.status(500).send('Server error');
