@@ -128,6 +128,9 @@ const BOARD_PINS = {
 // Map device board to compile FQBN
 const BOARD_FQBN = {
     esp32: 'esp32:esp32:esp32',
+    esp32c3: 'esp32:esp32:esp32c3',
+    esp32s3: 'esp32:esp32:esp32s3',
+    m5stickc: 'esp32:esp32:m5stick-c',
     esp8266: 'esp8266:esp8266:nodemcuv2',
     uno: 'arduino:avr:uno',
     nano: 'arduino:avr:nano',
@@ -619,7 +622,8 @@ ${heartbeatFields}
         { fqbn: 'esp32:esp32:esp32', label: '🔷 ESP32 Dev Module' },
         { fqbn: 'esp32:esp32:esp32s2', label: '🔷 ESP32-S2' },
         { fqbn: 'esp32:esp32:esp32s3', label: '🔷 ESP32-S3' },
-        { fqbn: 'esp32:esp32:esp32c3', label: '🔷 ESP32-C3' },
+        { fqbn: 'esp32:esp32:esp32c3', label: '🔷 ESP32-C3 Supermini' },
+        { fqbn: 'esp32:esp32:m5stick-c', label: '🟧 M5Stick-C' },
         { fqbn: 'esp8266:esp8266:nodemcuv2', label: '🔵 ESP8266 NodeMCU v2' },
         { fqbn: 'esp8266:esp8266:d1_mini', label: '🔵 ESP8266 Wemos D1 Mini' },
         { fqbn: 'arduino:avr:uno', label: '🟦 Arduino Uno' },
@@ -1227,15 +1231,13 @@ ${heartbeatFields}
                                 </div>
                             </div>
 
-                            {betaMode && (
                                 <div className="mb-4">
-                                    <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>Board / Chip</label>
+                                    <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>Target Board / Chip Variant</label>
                                     <select value={selectedBoard} onChange={e => { setSelectedBoard(e.target.value); setCompiledFiles(null); }}
                                         className={`w-full border outline-none rounded-xl px-3 py-2 font-mono text-xs transition-colors ${inputCls}`}>
                                         {BOARDS.map(b => <option key={b.fqbn} value={b.fqbn}>{b.label}</option>)}
                                     </select>
                                 </div>
-                            )}
 
                             {flashing && (
                                 <div className="mb-4">

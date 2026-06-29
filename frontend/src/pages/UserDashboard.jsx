@@ -10,6 +10,9 @@ const API = import.meta.env.VITE_API_URL || '';
 const BOARDS = {
     esp: [
         { id: 'esp32', label: 'ESP32', icon: '🔷', desc: 'Most popular. WiFi + BT. Recommended.' },
+        { id: 'esp32c3', label: 'ESP32-C3', icon: '🔷', desc: 'RISC-V single-core. Low power (e.g. Supermini).' },
+        { id: 'esp32s3', label: 'ESP32-S3', icon: '🔷', desc: 'Dual-core, AI instructions. Great for displays.' },
+        { id: 'm5stickc', label: 'M5Stick-C', icon: '🟧', desc: 'Compact ESP32 with screen and battery.' },
         { id: 'esp8266', label: 'ESP8266', icon: '🔵', desc: 'Smaller, cheaper. WiFi only. NodeMCU / D1 Mini.' },
     ],
     arduino: [

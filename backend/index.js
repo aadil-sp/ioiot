@@ -678,9 +678,10 @@ app.post('/api/compile', async (req, res) => {
             }
 
             if (board.includes('esp32')) {
+                const isC3OrS3 = board.includes('esp32c3') || board.includes('esp32s3');
                 if (bootloaderName) flashFiles.push({ address: bootloaderAddress, data: readBin(bootloaderName), name: 'Bootloader' });
                 if (partitionsName) flashFiles.push({ address: 0x8000, data: readBin(partitionsName), name: 'Partition Table' });
-                if (bootApp0Data) flashFiles.push({ address: 0xe000, data: bootApp0Data, name: 'Boot App0' });
+                if (bootApp0Data && !isC3OrS3) flashFiles.push({ address: 0xe000, data: bootApp0Data, name: 'Boot App0' });
             }
             flashFiles.push({ address: sketchAddress, data: readBin(sketchBinName), name: 'Sketch' });
 
