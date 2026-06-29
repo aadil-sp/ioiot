@@ -1227,6 +1227,26 @@ ${heartbeatFields}
                             </div>
                         </div>
 
+                        <div className="mb-6 bg-orange-500/5 border border-orange-500/10 p-4 rounded-2xl">
+                            <label className={`block text-[10px] font-mono uppercase tracking-widest mb-2 ${mutedText}`}>Target Board / Chip Variant</label>
+                            <select value={selectedBoard} onChange={e => { setSelectedBoard(e.target.value); setCompiledFiles(null); }}
+                                className={`w-full border outline-none rounded-xl px-3 py-2 font-mono text-xs transition-colors bg-transparent ${inputCls}`}>
+                                {BOARDS.map(b => <option key={b.fqbn} value={b.fqbn}>{b.label}</option>)}
+                            </select>
+                            
+                            {device.mode === 'wifi' && !selectedBoard.includes('esp8266') && (
+                                <div className="mt-4 pt-4 border-t border-orange-500/10 flex items-center gap-3">
+                                    <input type="checkbox" id="universalToggle" 
+                                        checked={useUniversalFirmware} 
+                                        onChange={e => setUseUniversalFirmware(e.target.checked)}
+                                        className="w-4 h-4 accent-orange-500" />
+                                    <label htmlFor="universalToggle" className={`text-xs font-mono cursor-pointer ${dark ? 'text-orange-400' : 'text-orange-600'}`}>
+                                        <strong>Universal Firmware Mode:</strong> Flash once, change pins instantly without compiling.
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+
                         {editingPins.length === 0 ? (
                             <div className={`flex flex-col items-center justify-center h-52 border-2 border-dashed rounded-2xl ${dark ? 'border-[#1a1a1a]' : 'border-gray-200'}`}>
                                 <p className={`font-mono text-sm mb-3 ${dark ? 'text-[#444]' : 'text-gray-400'}`}>No components yet</p>
@@ -1389,26 +1409,6 @@ ${heartbeatFields}
                                     )}
                                 </div>
                             </div>
-
-                                <div className="mb-4">
-                                    <label className={`block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`}>Target Board / Chip Variant</label>
-                                    <select value={selectedBoard} onChange={e => { setSelectedBoard(e.target.value); setCompiledFiles(null); }}
-                                        className={`w-full border outline-none rounded-xl px-3 py-2 font-mono text-xs transition-colors ${inputCls}`}>
-                                        {BOARDS.map(b => <option key={b.fqbn} value={b.fqbn}>{b.label}</option>)}
-                                    </select>
-                                </div>
-                                
-                                {device.mode === 'wifi' && !selectedBoard.includes('esp8266') && (
-                                    <div className="mb-6 mt-4 flex items-center gap-3 bg-orange-500/10 border border-orange-500/20 p-3 rounded-xl">
-                                        <input type="checkbox" id="universalToggle" 
-                                            checked={useUniversalFirmware} 
-                                            onChange={e => setUseUniversalFirmware(e.target.checked)}
-                                            className="w-4 h-4 accent-orange-500" />
-                                        <label htmlFor="universalToggle" className={`text-xs font-mono cursor-pointer ${dark ? 'text-orange-400' : 'text-orange-600'}`}>
-                                            <strong>Universal Firmware Mode:</strong> Flash once, change pins instantly without compiling.
-                                        </label>
-                                    </div>
-                                )}
 
                             {flashing && (
                                 <div className="mb-4">
