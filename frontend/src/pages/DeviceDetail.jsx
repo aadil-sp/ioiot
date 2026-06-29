@@ -111,6 +111,24 @@ const BOARD_PINS = {
         pwm: [2, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33],
         getLabel: (n) => `GPIO ${n}`
     },
+    esp32c3: {
+        all: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21],
+        analog: [0, 1, 2, 3, 4, 5],
+        pwm: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21],
+        getLabel: (n) => `GPIO ${n}`
+    },
+    esp32s3: {
+        all: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48],
+        analog: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+        pwm: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48],
+        getLabel: (n) => `GPIO ${n}`
+    },
+    'm5stick-c': {
+        all: [0, 9, 10, 26, 32, 33, 36, 37, 39],
+        analog: [32, 33, 36, 37, 39],
+        pwm: [0, 9, 10, 26, 32, 33],
+        getLabel: (n) => `GPIO ${n}`
+    },
     esp8266: {
         all: [0, 2, 4, 5, 12, 13, 14, 15, 16, 17],
         analog: [17],
@@ -1255,7 +1273,7 @@ ${heartbeatFields}
                         ) : (
                             <div className="space-y-3">
                                 {editingPins.map((pin, idx) => (
-                                    <PinConfigRow key={idx} pin={pin} idx={idx} onUpdate={updatePin} onRemove={removePin} isSerial={isSerial} dark={dark} card={card} inputCls={inputCls} mutedText={mutedText} board={device.board} />
+                                    <PinConfigRow key={idx} pin={pin} idx={idx} onUpdate={updatePin} onRemove={removePin} isSerial={isSerial} dark={dark} card={card} inputCls={inputCls} mutedText={mutedText} board={selectedBoard.split(':').pop() || device.board} />
                                 ))}
                             </div>
                         )}
