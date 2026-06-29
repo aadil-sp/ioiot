@@ -345,7 +345,165 @@ export default function DeviceDetail() {
     };
 
     // ─── Code Generator ──────────────────────────────────────────────────────
+    const generateUniversalCode = () => {
+        if (!device) return '';
+        const ssid = device.wifiSSID || 'demo';
+        const pass = device.wifiPassword || '12345678';
+        const board = device.board || 'esp32';
+        
+        return `// ================================================================
+// ${device.name} — IoIoT Universal Firmware
+// ================================================================
+// Dynamic Pin Configuration via MQTT
+// No need to recompile when changing pins!
+// ================================================================
+#if defined(ESP8266)
+  #error "Universal Firmware currently only supports ESP32. Please use standard compilation for ESP8266."
+#endif
+
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include <Preferences.h>
+#include <ESP32Servo.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+
+const char* ssid      = "${ssid}";
+const char* password  = "${pass}";
+const char* DEVICE_ID = "${device.deviceId}";
+const char* MQTT_HOST = "broker.hivemq.com";
+const int   MQTT_PORT = 1883;
+
+char TOPIC_CMD[64];
+char TOPIC_STATE[64];
+char TOPIC_CONFIG[64];
+char TOPIC_STATUS[64];
+
+WiFiClient   wifiClient;
+PubSubClient mqtt(wifiClient);
+Preferences  preferences;
+
+#define MAX_PINS 20
+struct PinConfig {
+  String widgetKey;
+  int pin;
+  String mode;
+  String type;
+  Servo* servoObj;
+};
+PinConfig activePins[MAX_PINS];
+int activePinCount = 0;
+
+void setupPins() {
+  for (int i = 0; i < activePinCount; i++) {
+    if (activePins[i].type == "servo") {
+      if (!activePins[i].servoObj) activePins[i].servoObj = new Servo();
+      activePins[i].servoObj->attach(activePins[i].pin);
+    } else {
+      int m = OUTPUT;
+      if (activePins[i].mode == "INPUT") m = INPUT;
+      else if (activePins[i].mode == "INPUT_PULLUP") m = INPUT_PULLUP;
+      pinMode(activePins[i].pin, m);
+    }
+  }
+}
+
+void loadConfig() {
+  preferences.begin("ioiot", false);
+  String json = preferences.getString("config", "{}");
+  preferences.end();
+  
+  StaticJsonDocument<2048> doc;
+  if (!deserializeJson(doc, json) && doc.containsKey("pins")) {
+    JsonArray pins = doc["pins"].as<JsonArray>();
+    activePinCount = 0;
+    for (JsonObject p : pins) {
+      if (activePinCount >= MAX_PINS) break;
+      activePins[activePinCount].widgetKey = p["widgetKey"].as<String>();
+      activePins[activePinCount].pin = p["pinNumber"].as<int>();
+      activePins[activePinCount].mode = p["mode"].as<String>();
+      activePins[activePinCount].type = p["type"].as<String>();
+      activePins[activePinCount].servoObj = nullptr;
+      activePinCount++;
+    }
+    setupPins();
+  }
+}
+
+void saveConfig(String json) {
+  preferences.begin("ioiot", false);
+  preferences.putString("config", json);
+  preferences.end();
+  loadConfig();
+}
+
+void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  Serial.begin(115200);
+  snprintf(TOPIC_CMD, 64, "ioiot/%s/command", DEVICE_ID);
+  snprintf(TOPIC_STATE, 64, "ioiot/%s/state", DEVICE_ID);
+  snprintf(TOPIC_CONFIG, 64, "ioiot/%s/config", DEVICE_ID);
+  snprintf(TOPIC_STATUS, 64, "ioiot/%s/status", DEVICE_ID);
+
+  loadConfig();
+
+  WiFi.begin(ssid, password);
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setCallback(mqttCallback);
+}
+
+void reconnect() {
+  while (!mqtt.connected()) {
+    if (WiFi.status() != WL_CONNECTED) return;
+    if (mqtt.connect(DEVICE_ID, NULL, NULL, TOPIC_STATUS, 1, true, "offline")) {
+      mqtt.publish(TOPIC_STATUS, "online", true);
+      mqtt.subscribe(TOPIC_CMD);
+      mqtt.subscribe(TOPIC_CONFIG);
+    } else {
+      delay(3000);
+    }
+  }
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  payload[length] = '\\0';
+  String msg = String((char*)payload);
+  
+  if (String(topic) == TOPIC_CONFIG) {
+    saveConfig(msg);
+    return;
+  }
+  
+  StaticJsonDocument<512> doc;
+  if (deserializeJson(doc, msg)) return;
+
+  for (int i = 0; i < activePinCount; i++) {
+    String key = activePins[i].widgetKey;
+    if (doc.containsKey(key) && activePins[i].mode == "OUTPUT") {
+      if (activePins[i].type == "servo" && activePins[i].servoObj) {
+        int a = constrain(doc[key].as<int>(), 0, 180);
+        activePins[i].servoObj->write(a);
+      } else if (activePins[i].type == "pwm") {
+        analogWrite(activePins[i].pin, doc[key].as<int>());
+      } else {
+        digitalWrite(activePins[i].pin, doc[key].as<bool>() ? HIGH : LOW);
+      }
+    }
+  }
+}
+
+void loop() {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!mqtt.connected()) reconnect();
+    mqtt.loop();
+  }
+}
+`;
+    };
+
     const generateCode = () => {
+        if (useUniversalFirmware) return generateUniversalCode();
         if (!device) return '';
         const board = device.board || 'esp32';
         const isArduino = ['uno', 'nano', 'mega'].includes(board);
@@ -600,6 +758,7 @@ ${heartbeatFields}
 
     // ── Cloud Compile + Flash state ──────────────────────────────────────────
     const [selectedBoard, setSelectedBoard] = useState('esp32:esp32:esp32');
+    const [useUniversalFirmware, setUseUniversalFirmware] = useState(false);
     const [compiling, setCompiling] = useState(false);
     const [compileLogs, setCompileLogs] = useState([]);
     const [compiledFiles, setCompiledFiles] = useState(null);
@@ -1238,6 +1397,18 @@ ${heartbeatFields}
                                         {BOARDS.map(b => <option key={b.fqbn} value={b.fqbn}>{b.label}</option>)}
                                     </select>
                                 </div>
+                                
+                                {device.mode === 'wifi' && !selectedBoard.includes('esp8266') && (
+                                    <div className="mb-6 mt-4 flex items-center gap-3 bg-orange-500/10 border border-orange-500/20 p-3 rounded-xl">
+                                        <input type="checkbox" id="universalToggle" 
+                                            checked={useUniversalFirmware} 
+                                            onChange={e => setUseUniversalFirmware(e.target.checked)}
+                                            className="w-4 h-4 accent-orange-500" />
+                                        <label htmlFor="universalToggle" className={`text-xs font-mono cursor-pointer ${dark ? 'text-orange-400' : 'text-orange-600'}`}>
+                                            <strong>Universal Firmware Mode:</strong> Flash once, change pins instantly without compiling.
+                                        </label>
+                                    </div>
+                                )}
 
                             {flashing && (
                                 <div className="mb-4">

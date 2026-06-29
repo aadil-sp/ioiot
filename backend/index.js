@@ -421,6 +421,11 @@ app.put('/api/devices/:id/pins', authenticate, async (req, res) => {
         pins.forEach(p => device.state.set(p.widgetKey, p.value));
         await device.save();
         io.emit('deviceConfigUpdate', { deviceId: device.deviceId, pins: device.pins });
+        
+        if (device.mode === 'wifi' && mqttClient?.connected) {
+            mqttClient.publish(`ioiot/${device.deviceId}/config`, JSON.stringify({ pins: device.pins }));
+        }
+        
         res.json(device);
     } catch (err) {
         console.error('Pin save error:', err);
