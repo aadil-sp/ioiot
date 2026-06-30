@@ -457,7 +457,9 @@ void saveConfig(String json) {
 }
 
 void setup() {
+#if defined(CONFIG_IDF_TARGET_ESP32)
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+#endif
   Serial.begin(115200);
   snprintf(TOPIC_CMD, 64, "ioiot/%s/command", DEVICE_ID);
   snprintf(TOPIC_STATE, 64, "ioiot/%s/state", DEVICE_ID);
