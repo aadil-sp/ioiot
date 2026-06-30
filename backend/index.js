@@ -359,12 +359,13 @@ app.put('/api/devices/:id', authenticate, async (req, res) => {
         if (ownerIdPut !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
 
-        const { name, wifiSSID, wifiPassword, mode, isLive, otaEnabled } = req.body;
+        const { name, wifiSSID, wifiPassword, mode, isLive, otaEnabled, board } = req.body;
         if (name !== undefined) device.name = name;
         if (wifiSSID !== undefined) device.wifiSSID = wifiSSID;
         if (wifiPassword !== undefined) device.wifiPassword = wifiPassword;
         if (mode !== undefined) device.mode = mode;
         if (otaEnabled !== undefined) device.otaEnabled = otaEnabled;
+        if (board !== undefined) device.board = board;
         if (isLive !== undefined && req.user.role === 'admin') device.isLive = isLive;
         await device.save();
         res.json(device);

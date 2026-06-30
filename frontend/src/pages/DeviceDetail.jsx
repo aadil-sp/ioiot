@@ -810,6 +810,20 @@ ${heartbeatFields}
         { fqbn: 'arduino:avr:mega', label: '🟪 Arduino Mega' },
     ];
 
+
+    const handleBoardChange = async (newFqbn) => {
+        setSelectedBoard(newFqbn);
+        setCompiledFiles(null);
+        const shortBoardKey = Object.keys(BOARD_FQBN).find(key => BOARD_FQBN[key] === newFqbn) || 'esp32';
+        try {
+            await axios.put(`${API}/api/devices/${id}`, { board: shortBoardKey }, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+        } catch (err) {
+            console.error('Failed to save board preference', err);
+        }
+    };
+
     const compileCode = async () => {
         setCompiling(true);
         setCompileLogs([]);
@@ -1249,7 +1263,7 @@ ${heartbeatFields}
 
                         <div className="mb-6 bg-orange-500/5 border border-orange-500/10 p-4 rounded-2xl">
                             <label className={`block text-[10px] font-mono uppercase tracking-widest mb-2 ${mutedText}`}>Target Board / Chip Variant</label>
-                            <select value={selectedBoard} onChange={e => { setSelectedBoard(e.target.value); setCompiledFiles(null); }}
+                            <select value={selectedBoard} onChange={e => handleBoardChange(e.target.value)}
                                 className={`w-full border outline-none rounded-xl px-3 py-2 font-mono text-xs transition-colors bg-transparent ${inputCls}`}>
                                 {BOARDS.map(b => <option key={b.fqbn} value={b.fqbn}>{b.label}</option>)}
                             </select>
@@ -1275,7 +1289,7 @@ ${heartbeatFields}
                         ) : (
                             <div className="space-y-3">
                                 {editingPins.map((pin, idx) => (
-                                    <PinConfigRow key={idx} pin={pin} idx={idx} onUpdate={updatePin} onRemove={removePin} isSerial={isSerial} dark={dark} card={card} inputCls={inputCls} mutedText={mutedText} board={selectedBoard.split(':').pop() || device.board} />
+                                    <PinConfigRow key={idx} pin={pin} idx={idx} onUpdate={updatePin} onRemove={removePin} isSerial={isSerial} dark={dark} card={card} inputCls={inputCls} mutedText={mutedText} board={selectedBoard.split(':')[2] || device.board} />
                                 ))}
                             </div>
                         )}
