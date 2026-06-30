@@ -146,7 +146,7 @@ const BOARD_PINS = {
 // Map device board to compile FQBN
 const BOARD_FQBN = {
     esp32: 'esp32:esp32:esp32',
-    esp32c3: 'esp32:esp32:esp32c3',
+    esp32c3: 'esp32:esp32:esp32c3:FlashFreq=40,FlashMode=dio',
     esp32s3: 'esp32:esp32:esp32s3',
     m5stickc: 'esp32:esp32:m5stick-c',
     esp8266: 'esp8266:esp8266:nodemcuv2',
@@ -801,7 +801,7 @@ ${heartbeatFields}
         { fqbn: 'esp32:esp32:esp32', label: '🔷 ESP32 Dev Module' },
         { fqbn: 'esp32:esp32:esp32s2', label: '🔷 ESP32-S2' },
         { fqbn: 'esp32:esp32:esp32s3', label: '🔷 ESP32-S3' },
-        { fqbn: 'esp32:esp32:esp32c3', label: '🔷 ESP32-C3 Supermini' },
+        { fqbn: 'esp32:esp32:esp32c3:FlashFreq=40,FlashMode=dio', label: '🔷 ESP32-C3 Supermini' },
         { fqbn: 'esp32:esp32:m5stick-c', label: '🟧 M5Stick-C' },
         { fqbn: 'esp8266:esp8266:nodemcuv2', label: '🔵 ESP8266 NodeMCU v2' },
         { fqbn: 'esp8266:esp8266:d1_mini', label: '🔵 ESP8266 Wemos D1 Mini' },
