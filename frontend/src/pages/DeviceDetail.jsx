@@ -457,7 +457,7 @@ void saveConfig(String json) {
 }
 
 void setup() {
-#if defined(CONFIG_IDF_TARGET_ESP32)
+#if defined(ESP32)
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 #endif
   Serial.begin(115200);
@@ -588,7 +588,7 @@ ${servoObjects || '// (no servo pins)'}
 ${stateVars || '// (none)'}
 
 void setup() {
-${board === 'esp32' ? '  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector\n' : ''}  Serial.begin(115200);
+${board.includes('esp32') ? '  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector\n' : ''}  Serial.begin(115200);
   while (!Serial); // Leonardo/Mega: wait for USB
   delay(300);
 
@@ -714,7 +714,7 @@ void connectMqtt() {
 }
 
 void setup() {
-${board === 'esp32' ? '    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector\n' : ''}    Serial.begin(115200);
+${board.includes('esp32') ? '    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector\n' : ''}    Serial.begin(115200);
     snprintf(TOPIC_CMD,    sizeof(TOPIC_CMD),    "ioiot/%s/command", DEVICE_ID);
     snprintf(TOPIC_STATE,  sizeof(TOPIC_STATE),  "ioiot/%s/state",   DEVICE_ID);
     snprintf(TOPIC_STATUS, sizeof(TOPIC_STATUS), "ioiot/%s/status",  DEVICE_ID);
