@@ -8,6 +8,16 @@ const JWT_SECRET = process.env.JWT_SECRET || (() => {
     return crypto.randomBytes(48).toString('hex');
 })();
 
+// Record when each user was last active, at most once every 5 minutes per user
+const lastSeenWrites = new Map();
+const touchLastSeen = (userId) => {
+    if (!userId) return;
+    const now = Date.now();
+    if (now - (lastSeenWrites.get(userId) || 0) < 5 * 60 * 1000) return;
+    lastSeenWrites.set(userId, now);
+    require('../models/User').updateOne({ _id: userId }, { $set: { lastSeenAt: new Date(now) } }).catch(() => {});
+};
+
 const authenticate = (req, res, next) => {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     if (!token) return res.status(401).send({ error: 'Please authenticate.' });
@@ -15,6 +25,7 @@ const authenticate = (req, res, next) => {
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
+        touchLastSeen(decoded.id);
         next();
     } catch (e) {
         res.status(401).send({ error: 'Please authenticate.' });

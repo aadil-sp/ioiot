@@ -11,9 +11,29 @@ import {
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
 
+const DAY = 24 * 60 * 60 * 1000;
+
+function formatDate(value) {
+    if (!value) return '—';
+    return new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function timeAgo(value) {
+    if (!value) return 'never';
+    const diff = Date.now() - new Date(value).getTime();
+    if (diff < 60 * 1000) return 'just now';
+    if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < DAY) return `${Math.floor(diff / 3600000)}h ago`;
+    if (diff < 30 * DAY) return `${Math.floor(diff / DAY)}d ago`;
+    return formatDate(value);
+}
+
+const within = (value, ms) => value && Date.now() - new Date(value).getTime() < ms;
+
 export default function AdminDashboard() {
     const navigate = useNavigate();
     const [tab, setTab] = useState('devices'); // 'devices' | 'users' | 'notify'
+    const [userSort, setUserSort] = useState('joined'); // 'joined' | 'active'
     const [devices, setDevices] = useState([]);
     const [users, setUsers] = useState([]);
     const [autoApprove, setAutoApprove] = useState(false);
@@ -130,7 +150,7 @@ export default function AdminDashboard() {
         setCreatingUser(true); setCreateUserError('');
         try {
             const res = await axios.post(`${API}/api/admin/users/create`, { username: newUsername, password: newPassword, role: newRole }, { headers });
-            setUsers(prev => [...prev, res.data.user]);
+            setUsers(prev => [res.data.user, ...prev]);
             setNewUsername(''); setNewPassword(''); setNewRole('user');
             setShowCreateUser(false);
         } catch (err) {
@@ -154,6 +174,38 @@ export default function AdminDashboard() {
     const pendingUsers = users.filter(u => !u.isApproved).length;
     const liveDevices = devices.filter(d => d.isLive).length;
 
+    const devicesByOwner = devices.reduce((acc, d) => {
+        const ownerId = d.owner?._id || d.owner;
+        if (ownerId) acc[ownerId] = (acc[ownerId] || 0) + 1;
+        return acc;
+    }, {});
+
+    const usage = [
+        { label: 'Joined today', value: users.filter(u => within(u.joinedAt, DAY)).length },
+        { label: 'Joined 7d', value: users.filter(u => within(u.joinedAt, 7 * DAY)).length },
+        { label: 'Active 24h', value: users.filter(u => within(u.lastSeenAt, DAY)).length },
+        { label: 'Active 7d', value: users.filter(u => within(u.lastSeenAt, 7 * DAY)).length },
+    ];
+
+    // New sign-ups per day over the last 14 days, oldest first
+    const signupDays = Array.from({ length: 14 }, (_, i) => {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        start.setDate(start.getDate() - (13 - i));
+        const end = start.getTime() + DAY;
+        const count = users.filter(u => {
+            const t = new Date(u.joinedAt).getTime();
+            return t >= start.getTime() && t < end;
+        }).length;
+        return { date: start, count };
+    });
+    const maxSignups = Math.max(1, ...signupDays.map(d => d.count));
+
+    const sortedUsers = [...users].sort((a, b) => {
+        const key = userSort === 'active' ? 'lastSeenAt' : 'joinedAt';
+        return new Date(b[key] || 0) - new Date(a[key] || 0);
+    });
+
     const TABS = [
         { key: 'devices', label: `Devices (${devices.length})` },
         { key: 'users', label: `Users (${users.length})` },
@@ -161,42 +213,42 @@ export default function AdminDashboard() {
     ];
 
     return (
-        <div className="min-h-screen p-6 md:p-10">
+        <div className="min-h-screen px-4 py-6 sm:p-6 md:p-10">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-3">
                     <Shield className="w-8 h-8 text-orange-500" />
                     <div>
-                        <h1 className="text-3xl font-black font-mono uppercase tracking-widest text-white">Admin Panel</h1>
+                        <h1 className="text-2xl sm:text-3xl font-black font-mono uppercase tracking-widest text-white">Admin Panel</h1>
                         <p className="text-gray-400 font-mono text-xs tracking-widest mt-0.5">System Overview</p>
                     </div>
                 </div>
-                <button onClick={fetchAll} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e1e1e] border border-[#333] text-gray-300 hover:text-white text-sm transition-all shadow-md">
+                <button onClick={fetchAll} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e1e1e] border border-[#333] text-gray-300 hover:text-white text-sm transition-all shadow-md">
                     <RefreshCw className="w-4 h-4" /> Refresh
                 </button>
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
                 {[
                     { label: 'Total Devices', value: devices.length, color: '#f97316', icon: <Cpu className="w-5 h-5" /> },
                     { label: 'Online Now', value: onlineDevices, color: '#22c55e', icon: <Wifi className="w-5 h-5" /> },
                     { label: 'Public Devices', value: liveDevices, color: '#a855f7', icon: <Radio className="w-5 h-5" /> },
                     { label: 'Pending Approval', value: pendingUsers, color: '#eab308', icon: <Shield className="w-5 h-5" /> },
                 ].map(stat => (
-                    <div key={stat.label} className="bg-[#1e1e2d] border border-[#3f3f4e] rounded-2xl p-6 shadow-xl shadow-black/40 hover:border-orange-500/30 transition-all">
+                    <div key={stat.label} className="bg-[#1e1e2d] border border-[#3f3f4e] rounded-2xl p-4 sm:p-6 shadow-xl shadow-black/40 hover:border-orange-500/30 transition-all">
                         <div className="flex items-center gap-3 mb-2" style={{ color: stat.color }}>{stat.icon}</div>
-                        <div className="text-4xl font-black font-mono" style={{ color: stat.color }}>{stat.value}</div>
-                        <div className="text-gray-300 font-mono text-xs uppercase tracking-[0.2em] font-bold mt-2">{stat.label}</div>
+                        <div className="text-3xl sm:text-4xl font-black font-mono" style={{ color: stat.color }}>{stat.value}</div>
+                        <div className="text-gray-300 font-mono text-[10px] sm:text-xs uppercase tracking-[0.15em] sm:tracking-[0.2em] font-bold mt-2">{stat.label}</div>
                     </div>
                 ))}
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 p-1 bg-[#22222d] border border-[#3f3f4e] rounded-xl mb-8 w-fit shadow-inner">
+            <div className="grid grid-cols-3 sm:flex gap-1 p-1 bg-[#22222d] border border-[#3f3f4e] rounded-xl mb-6 sm:mb-8 sm:w-fit shadow-inner">
                 {TABS.map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
-                        className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-mono font-bold text-sm transition-all ${tab === t.key ? 'bg-orange-500 text-black shadow-[0_0_20px_rgba(249,115,22,0.4)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                        className={`flex items-center justify-center gap-1.5 px-2 sm:px-6 py-2.5 rounded-lg font-mono font-bold text-xs sm:text-sm whitespace-nowrap transition-all ${tab === t.key ? 'bg-orange-500 text-black shadow-[0_0_20px_rgba(249,115,22,0.4)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                         {t.icon}{t.label}
                     </button>
                 ))}
@@ -210,13 +262,13 @@ export default function AdminDashboard() {
                 <div className="space-y-3">
                     {devices.map((device, i) => (
                         <motion.div key={device._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                            className={`bg-[#1e1e2d] border rounded-2xl p-5 flex items-center gap-5 transition-all shadow-xl ${device.isLive ? 'border-purple-500/60 bg-[#242435]' : 'border-[#3f3f4e] hover:border-orange-500/50 hover:bg-[#252535]'}`}>
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/20 border border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'bg-[#2a2a3a] border border-[#444]'}`}>
+                            className={`bg-[#1e1e2d] border rounded-2xl p-4 sm:p-5 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-5 transition-all shadow-xl ${device.isLive ? 'border-purple-500/60 bg-[#242435]' : 'border-[#3f3f4e] hover:border-orange-500/50 hover:bg-[#252535]'}`}>
+                            <div className={`w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center ${device.isConnected ? 'bg-green-500/20 border border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'bg-[#2a2a3a] border border-[#444]'}`}>
                                 {device.isConnected ? <Wifi className="w-6 h-6 text-green-400" /> : <WifiOff className="w-6 h-6 text-gray-400" />}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-3 flex-wrap">
-                                    <h3 className="text-white font-mono font-black text-base truncate">{device.name}</h3>
+                                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                                    <h3 className="text-white font-mono font-black text-base break-words min-w-0">{device.name}</h3>
                                     <span className={`text-[10px] px-3 py-1 rounded-full font-black font-mono tracking-widest ${device.isConnected ? 'text-green-400 bg-green-500/20 border border-green-500/40' : 'text-gray-300 bg-[#333] border border-[#555]'}`}>
                                         {device.isConnected ? 'ONLINE' : 'OFFLINE'}
                                     </span>
@@ -226,14 +278,16 @@ export default function AdminDashboard() {
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-gray-300 font-mono text-xs mt-2 font-bold opacity-80">
+                                <p className="text-gray-300 font-mono text-xs mt-2 font-bold opacity-80 break-all">
                                     {device.deviceId} · Owner: <span className="text-orange-400">{device.owner?.username || 'unknown'}</span> · {device.pins?.length || 0} pins
                                 </p>
                             </div>
 
+                            {/* Actions: own row on phones */}
+                            <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pt-3 sm:pt-0 border-t border-[#3f3f4e] sm:border-0">
                             {/* Public Toggle */}
                             <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-[10px] font-mono text-[#aaa] hidden sm:block">PUBLIC</span>
+                                <span className="text-[10px] font-mono text-[#aaa]">PUBLIC</span>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); toggleLive(device.deviceId); }}
                                     disabled={!!liveLoading[device.deviceId]}
@@ -248,6 +302,7 @@ export default function AdminDashboard() {
                                 className="flex items-center gap-2 text-xs text-orange-400 hover:text-white bg-orange-400/10 border border-orange-400/30 rounded-lg px-4 py-2 font-black font-mono transition-all shrink-0">
                                 <ExternalLink className="w-3.5 h-3.5" /> View
                             </button>
+                            </div>
                         </motion.div>
                     ))}
                     {devices.length === 0 && (
@@ -277,15 +332,53 @@ export default function AdminDashboard() {
                         </button>
                     </div>
 
-                    {users.map((user, i) => (
-                        <motion.div key={user._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                            className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-xl p-4 flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${user.role === 'admin' ? 'border-orange-500/30 bg-orange-500/10' : 'border-[#2a2a2a] bg-[#181818]'}`}>
+                    {/* Usage & traffic */}
+                    <div className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-xl p-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                            {usage.map(u => (
+                                <div key={u.label} className="bg-[#181818] border border-[#2a2a2a] rounded-lg px-3 py-2.5">
+                                    <div className="text-2xl font-black font-mono text-white">{u.value}</div>
+                                    <div className="text-[10px] font-mono uppercase tracking-widest text-[#888] mt-0.5">{u.label}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <h4 className="text-[10px] font-mono uppercase tracking-widest text-[#888] mb-2">Sign-ups, last 14 days</h4>
+                        <div className="flex items-end gap-1 h-20">
+                            {signupDays.map(d => (
+                                <div key={d.date.toISOString()} className="flex-1 flex flex-col items-center justify-end h-full"
+                                    title={`${formatDate(d.date)}: ${d.count} new`}>
+                                    {d.count > 0 && <span className="text-[9px] font-mono text-orange-400 mb-0.5">{d.count}</span>}
+                                    <div className="w-full rounded-sm bg-orange-500/80"
+                                        style={{ height: `${(d.count / maxSignups) * 100}%`, minHeight: d.count ? 3 : 1, opacity: d.count ? 1 : 0.25 }} />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex justify-between text-[9px] font-mono text-[#666] mt-1">
+                            <span>{formatDate(signupDays[0].date)}</span><span>Today</span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-[#888]">Sort by</span>
+                        <div className="flex gap-1 p-1 bg-[#181818] border border-[#2a2a2a] rounded-lg">
+                            {[{ key: 'joined', label: 'Newest' }, { key: 'active', label: 'Last active' }].map(o => (
+                                <button key={o.key} onClick={() => setUserSort(o.key)}
+                                    className={`px-3 py-1.5 rounded-md font-mono text-xs font-bold transition-all ${userSort === o.key ? 'bg-orange-500 text-black' : 'text-[#888] hover:text-white'}`}>
+                                    {o.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {sortedUsers.map((user, i) => (
+                        <motion.div key={user._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i, 20) * 0.03 }}
+                            className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-xl p-3 sm:p-4 flex items-start sm:items-center gap-3 sm:gap-4">
+                            <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center border ${user.role === 'admin' ? 'border-orange-500/30 bg-orange-500/10' : 'border-[#2a2a2a] bg-[#181818]'}`}>
                                 {user.role === 'admin' ? <Shield className="w-5 h-5 text-orange-500" /> : <Users className="w-5 h-5 text-[#777]" />}
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    <h3 className="text-white font-mono font-bold text-sm">{user.username}</h3>
+                                    <h3 className="text-white font-mono font-bold text-sm break-all min-w-0">{user.username}</h3>
                                     <span className={`text-[10px] px-2 py-0.5 rounded font-mono uppercase tracking-widest ${user.role === 'admin' ? 'text-orange-500 bg-orange-500/10 border border-orange-500/20' : 'text-blue-400 bg-blue-500/10 border border-blue-500/20'}`}>
                                         {user.role}
                                     </span>
@@ -296,10 +389,13 @@ export default function AdminDashboard() {
                                     )}
                                 </div>
                                 <p className="text-[#888] font-mono text-xs mt-0.5">
-                                    {user.isApproved ? '✓ Approved' : '⏳ Awaiting approval'} · {devices.filter(d => d.owner?._id === user._id || d.owner?.toString() === user._id).length} devices
+                                    {user.isApproved ? '✓ Approved' : '⏳ Awaiting approval'} · {devicesByOwner[user._id] || 0} devices
+                                </p>
+                                <p className="text-[#777] font-mono text-[11px] mt-1 leading-relaxed">
+                                    Joined {formatDate(user.joinedAt)} · {user.lastSeenAt ? `Active ${timeAgo(user.lastSeenAt)}` : 'Never active'} · {user.loginCount || 0} {user.loginCount === 1 ? 'login' : 'logins'}
                                 </p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                                 {!user.isApproved && (
                                     <button onClick={() => approveUser(user._id)}
                                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/30 text-green-500 text-xs font-bold hover:bg-green-500 hover:text-black transition-all">
@@ -308,7 +404,7 @@ export default function AdminDashboard() {
                                 )}
                                 {user.role !== 'admin' && (
                                     <button onClick={() => deleteUser(user._id)}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
+                                        className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
                                         <Trash2 className="w-3.5 h-3.5" />
                                     </button>
                                 )}

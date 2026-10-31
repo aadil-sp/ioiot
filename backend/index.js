@@ -271,6 +271,8 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(403).json({ error: 'Account not approved yet' });
         }
         const token = jwt.sign({ id: user._id, role: user.role, username: user.username }, JWT_SECRET);
+        const now = new Date();
+        User.updateOne({ _id: user._id }, { $set: { lastLoginAt: now, lastSeenAt: now }, $inc: { loginCount: 1 } }).catch(() => {});
         res.json({ token, role: user.role, username: user.username, userId: user._id, walletBalance: user.walletBalance || 0, profile: user.profile });
     } catch (error) {
         res.status(500).json({ error: 'Login failed' });
@@ -324,8 +326,8 @@ app.put('/api/profile', authenticate, async (req, res) => {
 // ─── Admin Routes ─────────────────────────────────────────────────────────────
 app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
     try {
-        const users = await User.find({}, '-password').sort({ createdAt: -1 });
-        res.json(users);
+        const users = await User.find({}, '-password').sort({ _id: -1 }).lean();
+        res.json(users.map(u => ({ ...u, joinedAt: u.createdAt || u._id.getTimestamp() })));
     } catch (error) { res.status(500).json({ error: 'Failed to fetch users' }); }
 });
 
@@ -361,7 +363,7 @@ app.post('/api/admin/users/create', authenticate, requireAdmin, async (req, res)
         if (exists) return res.status(400).json({ error: 'Username already exists' });
         const hashedPassword = await bcrypt.hash(password, 10);
         const user = await User.create({ username, password: hashedPassword, role: role || 'user', isApproved: true });
-        res.status(201).json({ message: 'User created', user: { _id: user._id, username: user.username, role: user.role, isApproved: true } });
+        res.status(201).json({ message: 'User created', user: { _id: user._id, username: user.username, role: user.role, isApproved: true, joinedAt: user.createdAt, loginCount: 0 } });
     } catch (err) {
         res.status(500).json({ error: 'Failed to create user' });
     }

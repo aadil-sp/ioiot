@@ -13,7 +13,12 @@ const userSchema = new mongoose.Schema({
     avatarColor: { type: String, default: '#f97316' },
     betaMode: { type: Boolean, default: false },
     notifications: { type: Boolean, default: true },
-  }
-});
+  },
+  // Usage tracking (accounts created before this have no createdAt; the admin
+  // API falls back to the ObjectId timestamp for those)
+  lastLoginAt: { type: Date },
+  lastSeenAt: { type: Date },
+  loginCount: { type: Number, default: 0 },
+}, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

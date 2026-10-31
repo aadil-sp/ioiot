@@ -34,7 +34,7 @@ export default function Login({ setAuth }) {
     };
 
     return (
-        <div className="flex justify-center items-center w-full min-h-[70vh]">
+        <div className="flex justify-center items-center w-full min-h-[70vh] px-4 py-8">
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
