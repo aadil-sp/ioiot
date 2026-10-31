@@ -17,6 +17,7 @@ const User = require('./models/User');
 const Device = require('./models/Device');
 const Settings = require('./models/Settings');
 const GuestVisit = require('./models/GuestVisit');
+const Reading = require('./models/Reading');
 const { authenticate, requireAdmin, JWT_SECRET } = require('./middleware/auth');
 
 const app = express();
@@ -158,6 +159,7 @@ mqttClient.on('message', async (topic, payload) => {
             });
 
             await device.save();
+            recordReadings(deviceId, stateChanges);
 
             if (wasOffline) {
                 io.to(deviceRoom(deviceId)).emit('deviceStatusUpdate', { deviceId, isConnected: true });
@@ -188,8 +190,43 @@ mqttClient.on('message', async (topic, payload) => {
 
 // Helper: publish a signed command to a device via MQTT
 function publishCommand(device, widgetKey, value) {
+    recordReadings(device.deviceId, { [widgetKey]: value });
     return publishSigned(device, 'command', { [widgetKey]: value });
 }
+
+// ─── Pin History ─────────────────────────────────────────────────────────────
+// Values are buffered per device and written at most every 30s, as one sample
+// in that hour's bucket. Only numbers and booleans are kept.
+const HISTORY_INTERVAL_MS = 30 * 1000;
+const pendingReadings = new Map(); // deviceId -> { key: value }
+
+function recordReadings(deviceId, values) {
+    const pending = pendingReadings.get(deviceId) || {};
+    for (const [key, val] of Object.entries(values)) {
+        const num = typeof val === 'boolean' ? (val ? 1 : 0) : Number(val);
+        if (Number.isFinite(num)) pending[key] = num;
+    }
+    if (Object.keys(pending).length) pendingReadings.set(deviceId, pending);
+}
+
+setInterval(async () => {
+    if (mongoose.connection.readyState !== 1 || !pendingReadings.size) return;
+    const batch = [...pendingReadings.entries()];
+    pendingReadings.clear();
+    const now = new Date();
+    const hour = new Date(Math.floor(now.getTime() / 3600000) * 3600000);
+    try {
+        await Reading.bulkWrite(batch.map(([deviceId, v]) => ({
+            updateOne: {
+                filter: { deviceId, hour },
+                update: { $push: { samples: { t: now, v } } },
+                upsert: true,
+            }
+        })), { ordered: false });
+    } catch (err) { console.error('Saving pin history failed:', err.message); }
+}, HISTORY_INTERVAL_MS);
+
+const HISTORY_RANGES = { '1h': 3600e3, '24h': 86400e3, '7d': 7 * 86400e3, '30d': 30 * 86400e3 };
 
 // Socket.io room for a device — only its owner, admins and (for live devices) viewers join it
 const deviceRoom = (deviceId) => `device:${deviceId}`;
@@ -575,6 +612,76 @@ app.post('/api/devices/:id/live', authenticate, requireAdmin, async (req, res) =
 });
 
 // Delete device
+// Pin history for charts: averaged into ~240 time slots across the range.
+// ?format=csv returns every raw sample instead.
+app.get('/api/devices/:id/history', authenticate, async (req, res) => {
+    try {
+        const device = await Device.findOne({ deviceId: req.params.id });
+        if (!device) return res.status(404).json({ error: 'Device not found' });
+        if (!isOwnerOrAdmin(device, req.user) && !device.isLive)
+            return res.status(403).json({ error: 'Unauthorized' });
+
+        const range = HISTORY_RANGES[req.query.range] ? req.query.range : '24h';
+        const to = Date.now();
+        const from = to - HISTORY_RANGES[range];
+        const buckets = await Reading.find({
+            deviceId: device.deviceId,
+            hour: { $gte: new Date(Math.floor(from / 3600000) * 3600000) },
+        }).sort({ hour: 1 }).lean();
+
+        const samples = [];
+        for (const b of buckets) {
+            for (const s of b.samples) {
+                const t = new Date(s.t).getTime();
+                if (t >= from) samples.push({ t, v: s.v });
+            }
+        }
+        const pins = device.pins.map(p => ({ key: p.widgetKey, label: p.label, color: p.color, mode: p.mode, type: p.type }));
+        const keys = pins.map(p => p.key).filter(k => samples.some(s => s.v[k] !== undefined));
+
+        if (req.query.format === 'csv') {
+            const escape = (str) => `"${String(str).replace(/"/g, '""')}"`;
+            const header = ['time', ...keys.map(k => pins.find(p => p.key === k)?.label || k)].map(escape).join(',');
+            const rows = samples.map(s => [new Date(s.t).toISOString(), ...keys.map(k => s.v[k] ?? '')].join(','));
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="${device.deviceId}-${range}.csv"`);
+            return res.send([header, ...rows].join('\n'));
+        }
+
+        const SLOTS = 240;
+        const slotMs = (to - from) / SLOTS;
+        const slots = new Map();
+        for (const s of samples) {
+            const i = Math.min(SLOTS - 1, Math.floor((s.t - from) / slotMs));
+            const slot = slots.get(i) || {};
+            for (const k of keys) {
+                if (s.v[k] === undefined) continue;
+                const acc = slot[k] || (slot[k] = { sum: 0, n: 0, min: Infinity, max: -Infinity });
+                acc.sum += s.v[k]; acc.n++;
+                acc.min = Math.min(acc.min, s.v[k]); acc.max = Math.max(acc.max, s.v[k]);
+            }
+            slots.set(i, slot);
+        }
+        const points = [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([i, slot]) => {
+            const point = { t: Math.round(from + (i + 0.5) * slotMs) };
+            for (const [k, acc] of Object.entries(slot)) point[k] = +(acc.sum / acc.n).toFixed(3);
+            return point;
+        });
+        const stats = Object.fromEntries(keys.map(k => {
+            const vals = samples.map(s => s.v[k]).filter(v => v !== undefined);
+            return [k, {
+                min: Math.min(...vals), max: Math.max(...vals),
+                avg: +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2),
+                last: vals[vals.length - 1], count: vals.length,
+            }];
+        }));
+        res.json({ range, from, to, pins: pins.filter(p => keys.includes(p.key)), points, stats });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to load history' });
+    }
+});
+
 app.delete('/api/devices/:id', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
@@ -583,6 +690,7 @@ app.delete('/api/devices/:id', authenticate, async (req, res) => {
         if (ownerIdDel !== req.user.id && req.user.role !== 'admin')
             return res.status(403).json({ error: 'Unauthorized' });
         await device.deleteOne();
+        await Reading.deleteMany({ deviceId: device.deviceId });
         res.json({ message: 'Device deleted' });
     } catch (err) {
         console.error(err);

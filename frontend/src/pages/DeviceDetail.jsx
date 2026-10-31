@@ -8,12 +8,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Wifi, WifiOff, Settings, Plus, Trash2, Save,
     Zap, Copy, Check, Code2, Sliders, RefreshCw, Eye, EyeOff, Bluetooth, ChevronDown,
-    MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle, Maximize2, Edit2
+    MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle, Maximize2, Edit2, LineChart
 } from 'lucide-react';
 import { ThemeContext } from '../App';
 import { useSerial } from '../contexts/SerialContext';
 import CustomActionEditor from '../components/CustomActionEditor';
 import CustomActionWidget from '../components/CustomActionWidget';
+import HistoryPanel from '../components/HistoryPanel';
 
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
@@ -1161,6 +1162,7 @@ ${heartbeatFields}
             <div className={`flex gap-1 p-1 border rounded-xl mb-6 overflow-x-auto ${card}`}>
                 {[
                     { key: 'control', icon: <Sliders className="w-4 h-4" />, label: 'Control' },
+                    { key: 'history', icon: <LineChart className="w-4 h-4" />, label: 'History' },
                     { key: 'config', icon: <Settings className="w-4 h-4" />, label: 'Pin Config' },
                     { key: 'code', icon: <Code2 className="w-4 h-4" />, label: 'Device Code' },
                     { key: 'flash', icon: <MonitorPlay className="w-4 h-4" />, label: 'Flash & Monitor', beta: true },
@@ -1450,6 +1452,12 @@ ${heartbeatFields}
                 )}
 
                 {/* ── FLASH & MONITOR TAB ──────────────────────────────── */}
+                {tab === 'history' && (
+                    <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                        <HistoryPanel deviceId={device.deviceId} dark={dark} />
+                    </motion.div>
+                )}
+
                 {tab === 'flash' && (
                     <motion.div key="flash" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
 
