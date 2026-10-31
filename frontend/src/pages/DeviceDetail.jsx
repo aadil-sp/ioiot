@@ -8,13 +8,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Wifi, WifiOff, Settings, Plus, Trash2, Save,
     Zap, Copy, Check, Code2, Sliders, RefreshCw, Eye, EyeOff, Bluetooth, ChevronDown,
-    MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle, Maximize2, Edit2, LineChart
+    MonitorPlay, Download, Usb, Terminal, Send, Trash, AlertTriangle, Maximize2, Edit2, LineChart, BellRing
 } from 'lucide-react';
 import { ThemeContext } from '../App';
 import { useSerial } from '../contexts/SerialContext';
 import CustomActionEditor from '../components/CustomActionEditor';
 import CustomActionWidget from '../components/CustomActionWidget';
 import HistoryPanel from '../components/HistoryPanel';
+import AutomationsPanel from '../components/AutomationsPanel';
 
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
@@ -1163,6 +1164,8 @@ ${heartbeatFields}
                 {[
                     { key: 'control', icon: <Sliders className="w-4 h-4" />, label: 'Control' },
                     { key: 'history', icon: <LineChart className="w-4 h-4" />, label: 'History' },
+                    // Only owners/admins receive the auth token, so use it to gate owner-only tabs
+                    ...(device.authToken ? [{ key: 'automations', icon: <BellRing className="w-4 h-4" />, label: 'Automations' }] : []),
                     { key: 'config', icon: <Settings className="w-4 h-4" />, label: 'Pin Config' },
                     { key: 'code', icon: <Code2 className="w-4 h-4" />, label: 'Device Code' },
                     { key: 'flash', icon: <MonitorPlay className="w-4 h-4" />, label: 'Flash & Monitor', beta: true },
@@ -1455,6 +1458,12 @@ ${heartbeatFields}
                 {tab === 'history' && (
                     <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                         <HistoryPanel deviceId={device.deviceId} dark={dark} />
+                    </motion.div>
+                )}
+
+                {tab === 'automations' && (
+                    <motion.div key="automations" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                        <AutomationsPanel device={device} dark={dark} />
                     </motion.div>
                 )}
 

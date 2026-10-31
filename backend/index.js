@@ -18,6 +18,8 @@ const Device = require('./models/Device');
 const Settings = require('./models/Settings');
 const GuestVisit = require('./models/GuestVisit');
 const Reading = require('./models/Reading');
+const Rule = require('./models/Rule');
+const Notification = require('./models/Notification');
 const { authenticate, requireAdmin, JWT_SECRET } = require('./middleware/auth');
 
 const app = express();
@@ -226,6 +228,181 @@ setInterval(async () => {
     } catch (err) { console.error('Saving pin history failed:', err.message); }
 }, HISTORY_INTERVAL_MS);
 
+// ─── Automations & Alerts ────────────────────────────────────────────────────
+// Every 10s, check each enabled rule against its device. Value/offline/online
+// rules fire once when their condition becomes true and re-arm when it clears.
+const RULE_TICK_MS = 10 * 1000;
+
+const toNumber = (v) => typeof v === 'boolean' ? (v ? 1 : 0) : Number(v);
+const compare = (a, op, b) => ({ '>': a > b, '<': a < b, '>=': a >= b, '<=': a <= b, '==': a === b, '!=': a !== b })[op];
+
+async function notifyUser(userId, { deviceId, title, message, level = 'warning' }) {
+    const note = await Notification.create({ user: userId, deviceId, title, message, level });
+    io.to(`user:${userId}`).emit('notification', note);
+}
+
+// Set an output pin the same way the dashboard does
+async function setDevicePin(device, widgetKey, value) {
+    const pin = device.pins.find(p => p.widgetKey === widgetKey);
+    if (pin) pin.value = value;
+    device.state.set(widgetKey, value);
+    device.markModified('pins');
+    publishCommand(device, widgetKey, value);
+    io.to(deviceRoom(device.deviceId)).emit('deviceStateUpdate', {
+        deviceId: device.deviceId, widgetKey, value, state: Object.fromEntries(device.state)
+    });
+    await device.save();
+}
+
+function describeRule(rule, device) {
+    const t = rule.trigger;
+    const label = device.pins.find(p => p.widgetKey === t.key)?.label || t.key;
+    switch (t.type) {
+        case 'value': return `${label} is ${device.state.get(t.key)} (rule: ${t.op} ${t.value})`;
+        case 'offline': return `${device.name} has been offline for ${t.forMinutes} min`;
+        case 'online': return `${device.name} is back online`;
+        default: return `Scheduled at ${t.time}`;
+    }
+}
+
+async function fireRule(rule, device) {
+    for (const action of rule.actions) {
+        if (action.type === 'notify') {
+            await notifyUser(rule.owner, {
+                deviceId: device.deviceId,
+                title: `${rule.name} · ${device.name}`,
+                message: action.message || describeRule(rule, device),
+                level: rule.trigger.type === 'online' || rule.trigger.type === 'schedule' ? 'info' : 'warning',
+            });
+        } else if (action.type === 'set' && action.key) {
+            await setDevicePin(device, action.key, action.value);
+        }
+    }
+}
+
+function scheduleParts(timeZone, now) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+        timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', weekday: 'short', hour12: false,
+    }).formatToParts(now).map(p => [p.type, p.value]));
+    const hour = parts.hour === '24' ? '00' : parts.hour;
+    return {
+        time: `${hour}:${parts.minute}`,
+        day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday),
+        key: `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}`,
+    };
+}
+
+async function runRules() {
+    if (mongoose.connection.readyState !== 1) return;
+    const rules = await Rule.find({ enabled: true });
+    if (!rules.length) return;
+    const devices = await Device.find({ deviceId: { $in: [...new Set(rules.map(r => r.deviceId))] } });
+    const byId = new Map(devices.map(d => [d.deviceId, d]));
+    const now = new Date();
+
+    for (const rule of rules) {
+        const device = byId.get(rule.deviceId);
+        if (!device) continue;
+        const t = rule.trigger;
+        let shouldFire = false;
+        try {
+            if (t.type === 'schedule') {
+                const p = scheduleParts(t.timeZone || 'UTC', now);
+                if (p.time === t.time && t.days.includes(p.day) && rule.lastScheduleKey !== p.key) {
+                    rule.lastScheduleKey = p.key;
+                    shouldFire = true;
+                }
+            } else {
+                let condition = false;
+                if (t.type === 'value') {
+                    // Ignore stale values from devices that are offline
+                    const v = toNumber(device.state.get(t.key));
+                    condition = device.isConnected && Number.isFinite(v) && compare(v, t.op, t.value);
+                    if (condition && !rule.conditionSince) rule.conditionSince = now;
+                    if (!condition && rule.conditionSince) rule.conditionSince = undefined;
+                    condition = condition && now - rule.conditionSince >= (t.forSeconds || 0) * 1000;
+                } else if (t.type === 'offline') {
+                    const since = device.lastSeen || device.updatedAt;
+                    condition = !device.isConnected && since && now - since >= t.forMinutes * 60000;
+                } else if (t.type === 'online') {
+                    condition = device.isConnected;
+                }
+
+                if (condition && !rule.active) {
+                    rule.active = true;
+                    const cooling = rule.lastFiredAt && now - rule.lastFiredAt < rule.cooldownMinutes * 60000;
+                    shouldFire = !cooling;
+                } else if (!condition && rule.active && !(t.type === 'value' && rule.conditionSince)) {
+                    rule.active = false;
+                }
+            }
+
+            if (shouldFire) {
+                rule.lastFiredAt = now;
+                await fireRule(rule, device);
+            }
+            if (rule.isModified()) await rule.save();
+        } catch (err) {
+            console.error(`Rule ${rule._id} failed:`, err.message);
+        }
+    }
+}
+
+setInterval(() => runRules().catch(err => console.error('Rule engine error:', err.message)), RULE_TICK_MS);
+
+// Validate and normalise a rule from the request body against the device's pins
+function parseRule(body, device) {
+    const t = body.trigger || {};
+    const pinKeys = device.pins.map(p => p.widgetKey);
+    const outputKeys = device.pins.filter(p => p.mode === 'OUTPUT').map(p => p.widgetKey);
+    const trigger = { type: t.type };
+
+    if (t.type === 'value') {
+        if (!pinKeys.includes(t.key)) throw new Error('Pick a pin for the condition');
+        if (!['>', '<', '>=', '<=', '==', '!='].includes(t.op)) throw new Error('Invalid comparison');
+        if (!Number.isFinite(Number(t.value))) throw new Error('Threshold must be a number');
+        Object.assign(trigger, { key: t.key, op: t.op, value: Number(t.value), forSeconds: Math.min(86400, Math.max(0, Number(t.forSeconds) || 0)) });
+    } else if (t.type === 'offline') {
+        trigger.forMinutes = Math.min(1440, Math.max(1, Number(t.forMinutes) || 5));
+    } else if (t.type === 'schedule') {
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t.time || '')) throw new Error('Time must be HH:MM');
+        const days = (Array.isArray(t.days) ? t.days : []).map(Number).filter(d => d >= 0 && d <= 6);
+        if (!days.length) throw new Error('Pick at least one day');
+        try { new Intl.DateTimeFormat('en-US', { timeZone: t.timeZone }); } catch { throw new Error('Invalid time zone'); }
+        Object.assign(trigger, { time: t.time, days: [...new Set(days)], timeZone: t.timeZone || 'UTC' });
+    } else if (t.type !== 'online') {
+        throw new Error('Invalid trigger');
+    }
+
+    const actions = (Array.isArray(body.actions) ? body.actions : []).slice(0, 5).map(a => {
+        if (a.type === 'notify') return { type: 'notify', message: String(a.message || '').slice(0, 200) };
+        if (a.type === 'set') {
+            if (!outputKeys.includes(a.key)) throw new Error('Pick an output pin to control');
+            const value = typeof a.value === 'boolean' ? a.value : Number(a.value);
+            if (typeof value !== 'boolean' && !Number.isFinite(value)) throw new Error('Pin value must be on/off or a number');
+            return { type: 'set', key: a.key, value };
+        }
+        throw new Error('Invalid action');
+    });
+    if (!actions.length) throw new Error('Add at least one action');
+
+    return {
+        name: String(body.name || 'New automation').trim().slice(0, 60) || 'New automation',
+        enabled: body.enabled !== false,
+        trigger,
+        actions,
+        cooldownMinutes: Math.min(1440, Math.max(0, Number(body.cooldownMinutes ?? 5) || 0)),
+    };
+}
+
+async function loadOwnedDevice(req, res) {
+    const device = await Device.findOne({ deviceId: req.params.id });
+    if (!device) { res.status(404).json({ error: 'Device not found' }); return null; }
+    if (!isOwnerOrAdmin(device, req.user)) { res.status(403).json({ error: 'Unauthorized' }); return null; }
+    return device;
+}
+
 const HISTORY_RANGES = { '1h': 3600e3, '24h': 86400e3, '7d': 7 * 86400e3, '30d': 30 * 86400e3 };
 
 // Socket.io room for a device — only its owner, admins and (for live devices) viewers join it
@@ -328,7 +505,10 @@ async function endGuest(userId, reason) {
     const user = await User.findOne({ _id: userId, isGuest: true });
     if (!user) return;
     const devicesCreated = await Device.countDocuments({ owner: user._id });
+    const guestDeviceIds = (await Device.find({ owner: user._id }, 'deviceId')).map(d => d.deviceId);
     await Device.deleteMany({ owner: user._id });
+    await Rule.deleteMany({ deviceId: { $in: guestDeviceIds } });
+    await Notification.deleteMany({ user: user._id });
     await User.deleteOne({ _id: user._id });
     const visit = await GuestVisit.findOne({ user: user._id, endedAt: null });
     if (visit) {
@@ -504,6 +684,9 @@ app.post('/api/admin/users/:id/approve', authenticate, requireAdmin, async (req,
 });
 
 app.delete('/api/admin/users/:id', authenticate, requireAdmin, async (req, res) => {
+    const userDeviceIds = (await Device.find({ owner: req.params.id }, 'deviceId')).map(d => d.deviceId);
+    await Rule.deleteMany({ deviceId: { $in: userDeviceIds } });
+    await Notification.deleteMany({ user: req.params.id });
     await Device.deleteMany({ owner: req.params.id });
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User deleted' });
@@ -682,6 +865,82 @@ app.get('/api/devices/:id/history', authenticate, async (req, res) => {
     }
 });
 
+// ─── Automation & Notification Routes ────────────────────────────────────────
+app.get('/api/devices/:id/rules', authenticate, async (req, res) => {
+    const device = await loadOwnedDevice(req, res);
+    if (!device) return;
+    res.json(await Rule.find({ deviceId: device.deviceId }).sort({ createdAt: 1 }));
+});
+
+app.post('/api/devices/:id/rules', authenticate, async (req, res) => {
+    try {
+        const device = await loadOwnedDevice(req, res);
+        if (!device) return;
+        if (await Rule.countDocuments({ deviceId: device.deviceId }) >= 20)
+            return res.status(400).json({ error: 'A device can have at most 20 automations' });
+        const data = parseRule(req.body, device);
+        // An "online" rule created while the device is online shouldn't fire immediately
+        const rule = await Rule.create({ ...data, deviceId: device.deviceId, owner: device.owner?._id || device.owner, active: data.trigger.type === 'online' && device.isConnected });
+        res.status(201).json(rule);
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.put('/api/devices/:id/rules/:ruleId', authenticate, async (req, res) => {
+    try {
+        const device = await loadOwnedDevice(req, res);
+        if (!device) return;
+        const rule = await Rule.findOne({ _id: req.params.ruleId, deviceId: device.deviceId });
+        if (!rule) return res.status(404).json({ error: 'Automation not found' });
+        if (Object.keys(req.body).length === 1 && typeof req.body.enabled === 'boolean') {
+            rule.enabled = req.body.enabled;
+        } else {
+            Object.assign(rule, parseRule(req.body, device));
+        }
+        // Re-arm with the new settings
+        rule.active = rule.trigger.type === 'online' && device.isConnected;
+        rule.conditionSince = undefined;
+        await rule.save();
+        res.json(rule);
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.delete('/api/devices/:id/rules/:ruleId', authenticate, async (req, res) => {
+    const device = await loadOwnedDevice(req, res);
+    if (!device) return;
+    await Rule.deleteOne({ _id: req.params.ruleId, deviceId: device.deviceId });
+    res.json({ message: 'Automation deleted' });
+});
+
+// Run a rule's actions right now, to try it out
+app.post('/api/devices/:id/rules/:ruleId/test', authenticate, async (req, res) => {
+    try {
+        const device = await loadOwnedDevice(req, res);
+        if (!device) return;
+        const rule = await Rule.findOne({ _id: req.params.ruleId, deviceId: device.deviceId });
+        if (!rule) return res.status(404).json({ error: 'Automation not found' });
+        await fireRule(rule, device);
+        res.json({ message: 'Ran actions' });
+    } catch (err) { res.status(500).json({ error: 'Test run failed' }); }
+});
+
+app.get('/api/notifications', authenticate, async (req, res) => {
+    const [items, unread] = await Promise.all([
+        Notification.find({ user: req.user.id }).sort({ createdAt: -1 }).limit(50),
+        Notification.countDocuments({ user: req.user.id, read: false }),
+    ]);
+    res.json({ items, unread });
+});
+
+app.post('/api/notifications/read', authenticate, async (req, res) => {
+    await Notification.updateMany({ user: req.user.id, read: false }, { $set: { read: true } });
+    res.json({ ok: true });
+});
+
+app.delete('/api/notifications', authenticate, async (req, res) => {
+    await Notification.deleteMany({ user: req.user.id });
+    res.json({ ok: true });
+});
+
 app.delete('/api/devices/:id', authenticate, async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
@@ -691,6 +950,7 @@ app.delete('/api/devices/:id', authenticate, async (req, res) => {
             return res.status(403).json({ error: 'Unauthorized' });
         await device.deleteOne();
         await Reading.deleteMany({ deviceId: device.deviceId });
+        await Rule.deleteMany({ deviceId: device.deviceId });
         res.json({ message: 'Device deleted' });
     } catch (err) {
         console.error(err);
@@ -837,6 +1097,13 @@ io.on('connection', (socket) => {
 
     socket.on('unwatchDevice', ({ deviceId } = {}) => {
         socket.leave(deviceRoom(deviceId));
+    });
+
+    socket.on('watchUser', ({ token } = {}) => {
+        try {
+            const user = jwt.verify(token, JWT_SECRET);
+            socket.join(`user:${user.id}`);
+        } catch { }
     });
 
     socket.on('watchAdmin', ({ token } = {}) => {

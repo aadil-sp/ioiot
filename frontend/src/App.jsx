@@ -12,6 +12,7 @@ import WebEditor from './pages/WebEditor';
 import { Cpu, LogOut, LayoutDashboard, Shield, Sun, Moon, User, Menu, X, Bell, Code2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { isGuest, endGuestSession, sendGuestHeartbeat } from './utils/guest';
+import NotificationBell from './components/NotificationBell';
 
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
@@ -46,6 +47,8 @@ function NavContent({ auth, setAuth, dark, toggle, mobile, onClose }) {
 
       {token && (
         <>
+          <NotificationBell dark={dark} socket={socket} />
+
           {/* Avatar / Profile */}
           <Link to="/profile" onClick={onClose}
             className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black font-mono text-sm hover:opacity-80 transition-all"
@@ -120,11 +123,15 @@ function AppShell({ auth, setAuth, dark, toggle }) {
 
   // Listen for admin push notifications
   useEffect(() => {
-    socket.on('adminNotification', (data) => {
+    const show = (data) => {
       setNotification(data);
       setTimeout(() => setNotification(null), 8000);
-    });
-    return () => socket.off('adminNotification');
+    };
+    // Automation alerts also pop up as a toast
+    const showAlert = (note) => show({ type: note.level, title: note.title, message: note.message });
+    socket.on('adminNotification', show);
+    socket.on('notification', showAlert);
+    return () => { socket.off('adminNotification', show); socket.off('notification', showAlert); };
   }, []);
 
   const notifColors = {
