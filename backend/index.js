@@ -16,6 +16,7 @@ const mqtt = require('mqtt');
 const User = require('./models/User');
 const Device = require('./models/Device');
 const Settings = require('./models/Settings');
+const GuestVisit = require('./models/GuestVisit');
 const { authenticate, requireAdmin, JWT_SECRET } = require('./middleware/auth');
 
 const app = express();
@@ -279,6 +280,85 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// ─── Guest Sessions ──────────────────────────────────────────────────────────
+// A guest gets a throwaway account. The browser sends a heartbeat every minute;
+// the account (and its devices) is deleted when the guest logs out, comes back
+// after closing the browser, or stops sending heartbeats.
+const GUEST_IDLE_MS = 10 * 60 * 1000;
+const guestStartsByIp = new Map();
+
+async function endGuest(userId, reason) {
+    const user = await User.findOne({ _id: userId, isGuest: true });
+    if (!user) return;
+    const devicesCreated = await Device.countDocuments({ owner: user._id });
+    await Device.deleteMany({ owner: user._id });
+    await User.deleteOne({ _id: user._id });
+    const visit = await GuestVisit.findOne({ user: user._id, endedAt: null });
+    if (visit) {
+        // A timed-out guest really left at their last heartbeat
+        visit.endedAt = reason === 'timeout' ? visit.lastSeenAt : new Date();
+        visit.endReason = reason;
+        visit.devicesCreated = devicesCreated;
+        await visit.save();
+    }
+}
+
+setInterval(async () => {
+    if (mongoose.connection.readyState !== 1) return;
+    try {
+        const stale = await User.find({ isGuest: true, lastSeenAt: { $lt: new Date(Date.now() - GUEST_IDLE_MS) } }, '_id');
+        for (const g of stale) await endGuest(g._id, 'timeout');
+    } catch (err) { console.error('Guest cleanup failed:', err.message); }
+}, 60 * 1000);
+
+app.post('/api/auth/guest', async (req, res) => {
+    try {
+        // At most 10 guest sessions per IP per hour
+        const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+        const now = Date.now();
+        const recent = (guestStartsByIp.get(ip) || []).filter(t => now - t < 60 * 60 * 1000);
+        if (recent.length >= 10) return res.status(429).json({ error: 'Too many guest sessions. Try again later.' });
+        guestStartsByIp.set(ip, [...recent, now]);
+
+        const username = `guest-${crypto.randomBytes(3).toString('hex')}`;
+        const password = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10);
+        const user = await User.create({
+            username, password, role: 'user', isApproved: true, isGuest: true,
+            lastLoginAt: new Date(now), lastSeenAt: new Date(now), loginCount: 1,
+            profile: { displayName: 'Guest' },
+        });
+        const device = /Mobi|Android|iPhone|iPad/i.test(req.headers['user-agent'] || '') ? 'Mobile' : 'Desktop';
+        await GuestVisit.create({ name: username, user: user._id, device });
+
+        const token = jwt.sign({ id: user._id, role: user.role, username, isGuest: true }, JWT_SECRET, { expiresIn: '12h' });
+        res.json({ token, role: user.role, username, userId: user._id, walletBalance: 0, profile: user.profile, isGuest: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Could not start a guest session' });
+    }
+});
+
+app.post('/api/auth/guest/heartbeat', authenticate, async (req, res) => {
+    if (!req.user.isGuest) return res.json({ ok: true });
+    const now = new Date();
+    const updated = await User.updateOne({ _id: req.user.id, isGuest: true }, { $set: { lastSeenAt: now } });
+    if (!updated.matchedCount) return res.status(401).json({ error: 'Guest session has ended' });
+    await GuestVisit.updateOne({ user: req.user.id, endedAt: null }, { $set: { lastSeenAt: now } });
+    res.json({ ok: true });
+});
+
+// Called with navigator.sendBeacon, which can't set headers, so the token comes
+// in a text/plain body (text/plain also avoids a CORS preflight).
+app.post('/api/auth/guest/end', express.text({ type: '*/*' }), async (req, res) => {
+    try {
+        const { token, reason } = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded.isGuest) await endGuest(decoded.id, reason === 'logout' ? 'logout' : 'closed');
+        res.json({ ok: true });
+    } catch {
+        res.status(400).json({ error: 'Invalid request' });
+    }
+});
+
 // ─── Change Password ──────────────────────────────────────────────────────────
 app.post('/api/auth/change-password', authenticate, async (req, res) => {
     try {
@@ -326,7 +406,7 @@ app.put('/api/profile', authenticate, async (req, res) => {
 // ─── Admin Routes ─────────────────────────────────────────────────────────────
 app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
     try {
-        const users = await User.find({}, '-password').sort({ _id: -1 }).lean();
+        const users = await User.find({ isGuest: { $ne: true } }, '-password').sort({ _id: -1 }).lean();
         res.json(users.map(u => ({ ...u, joinedAt: u.createdAt || u._id.getTimestamp() })));
     } catch (error) { res.status(500).json({ error: 'Failed to fetch users' }); }
 });
@@ -387,8 +467,19 @@ app.post('/api/admin/users/:id/approve', authenticate, requireAdmin, async (req,
 });
 
 app.delete('/api/admin/users/:id', authenticate, requireAdmin, async (req, res) => {
+    await Device.deleteMany({ owner: req.params.id });
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User deleted' });
+});
+
+app.get('/api/admin/guests', authenticate, requireAdmin, async (req, res) => {
+    try {
+        const visits = await GuestVisit.find({}).sort({ startedAt: -1 }).limit(300).lean();
+        const active = visits.filter(v => !v.endedAt).map(v => v.user);
+        const counts = await Device.aggregate([{ $match: { owner: { $in: active } } }, { $group: { _id: '$owner', n: { $sum: 1 } } }]);
+        const byUser = Object.fromEntries(counts.map(c => [String(c._id), c.n]));
+        res.json(visits.map(v => v.endedAt ? v : { ...v, devicesCreated: byUser[String(v.user)] || 0 }));
+    } catch (error) { res.status(500).json({ error: 'Failed to fetch guest visits' }); }
 });
 
 // Admin can see ALL devices across all users

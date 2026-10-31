@@ -5,6 +5,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, enum: ['user', 'admin', 'shopkeeper'], default: 'user' },
   isApproved: { type: Boolean, default: false },
+  isGuest: { type: Boolean, default: false }, // one-time account, deleted when the session ends
   walletBalance: { type: Number, default: 0 },
   shopName: { type: String, trim: true }, // Only used if role is 'shopkeeper'
   profile: {

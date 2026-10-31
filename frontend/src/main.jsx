@@ -4,6 +4,9 @@ import App from './App.jsx'
 import './index.css'
 import { SerialProvider } from './contexts/SerialContext.jsx'
 import axios from 'axios'
+import { endGuestIfBrowserWasClosed } from './utils/guest.js'
+
+endGuestIfBrowserWasClosed()
 
 // A saved login can stop working (password changed, server secret rotated, user
 // deleted). Instead of leaving every page silently broken, send them to log in again.

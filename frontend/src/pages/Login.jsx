@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { cacheProfile } from '../utils/profileCache';
+import { markGuestSession } from '../utils/guest';
 import { Fingerprint, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -10,24 +11,36 @@ export default function Login({ setAuth }) {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
+    const [guestLoading, setGuestLoading] = useState(false);
     const navigate = useNavigate();
+
+    const signIn = (data) => {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('role', data.role);
+        localStorage.setItem('username', data.username);
+        if (data.userId) localStorage.setItem('userId', data.userId);
+        cacheProfile(data.profile);
+        setAuth({ token: data.token, role: data.role, username: data.username });
+        navigate(data.role === 'admin' ? '/admin' : '/dashboard');
+    };
+
+    const continueAsGuest = async () => {
+        setGuestLoading(true); setError('');
+        try {
+            const res = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/auth/guest`);
+            markGuestSession();
+            signIn(res.data);
+        } catch (err) {
+            setError(err.response?.data?.error || 'Could not start a guest session.');
+        } finally { setGuestLoading(false); }
+    };
 
     const handleLogin = async (e) => {
         e.preventDefault();
         const trimmedUsername = username.trim();
         try {
             const res = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/auth/login`, { username: trimmedUsername, password });
-            localStorage.setItem('token', res.data.token);
-            localStorage.setItem('role', res.data.role);
-            localStorage.setItem('username', res.data.username);
-            if (res.data.userId) localStorage.setItem('userId', res.data.userId);
-            cacheProfile(res.data.profile);
-            setAuth({
-                token: res.data.token,
-                role: res.data.role,
-                username: res.data.username
-            });
-            navigate(res.data.role === 'admin' ? '/admin' : '/dashboard');
+            signIn(res.data);
         } catch (err) {
             setError(err.response?.data?.error || 'Authentication denied.');
         }
@@ -92,6 +105,18 @@ export default function Login({ setAuth }) {
                         <div className="absolute inset-0 bg-white/20 translate-y-[100%] group-hover:translate-y-[0%] transition-transform duration-300 pointer-events-none"></div>
                     </button>
                 </form>
+                <div className="flex items-center gap-3 my-6">
+                    <div className="flex-1 h-px bg-[#333]" />
+                    <span className="text-[10px] text-gray-600 uppercase tracking-[0.2em] font-bold">or</span>
+                    <div className="flex-1 h-px bg-[#333]" />
+                </div>
+                <button type="button" onClick={continueAsGuest} disabled={guestLoading}
+                    className="w-full border-2 border-[#333] hover:border-sky-400 text-gray-300 hover:text-sky-300 font-bold uppercase tracking-widest text-sm py-3.5 rounded-xl transition-all disabled:opacity-50">
+                    {guestLoading ? 'Starting…' : 'Continue as Guest'}
+                </button>
+                <p className="text-[10px] text-gray-600 text-center mt-2 font-mono">
+                    No sign-up. Your guest account is deleted when you close the browser.
+                </p>
                 <div className="mt-8 text-center">
                     <Link to="/register" className="text-[10px] text-gray-600 uppercase tracking-[0.2em] font-bold hover:text-orange-400 transition-colors">
                         — Create An Account —

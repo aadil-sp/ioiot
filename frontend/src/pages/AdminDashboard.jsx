@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Users, Wifi, WifiOff, Check, X, Trash2, Shield, Cpu, RefreshCw,
-    ExternalLink, Plus, Eye, EyeOff, Bell, Globe, Radio, UserPlus, Lock, Send
+    ExternalLink, Plus, Eye, EyeOff, Bell, Globe, Radio, UserPlus, Lock, Send, UserRound, Smartphone, Monitor
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || '';
@@ -28,11 +28,25 @@ function timeAgo(value) {
     return formatDate(value);
 }
 
+function formatTime(value) {
+    return new Date(value).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDuration(ms) {
+    const mins = Math.max(1, Math.round(ms / 60000));
+    if (mins < 60) return `${mins} min`;
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+const END_REASONS = { closed: 'closed browser', logout: 'ended session', timeout: 'went idle' };
+
 const within = (value, ms) => value && Date.now() - new Date(value).getTime() < ms;
 
 export default function AdminDashboard() {
     const navigate = useNavigate();
-    const [tab, setTab] = useState('devices'); // 'devices' | 'users' | 'notify'
+    const [tab, setTab] = useState('devices'); // 'devices' | 'users' | 'guests' | 'notify'
+    const [guests, setGuests] = useState([]);
     const [userSort, setUserSort] = useState('joined'); // 'joined' | 'active'
     const [devices, setDevices] = useState([]);
     const [users, setUsers] = useState([]);
@@ -76,13 +90,15 @@ export default function AdminDashboard() {
     const fetchAll = async () => {
         setLoading(true);
         try {
-            const [devRes, usrRes, setRes] = await Promise.all([
+            const [devRes, usrRes, setRes, guestRes] = await Promise.all([
                 axios.get(`${API}/api/admin/devices`, { headers }),
                 axios.get(`${API}/api/admin/users`, { headers }),
-                axios.get(`${API}/api/admin/settings`, { headers })
+                axios.get(`${API}/api/admin/settings`, { headers }),
+                axios.get(`${API}/api/admin/guests`, { headers }).catch(() => ({ data: [] })),
             ]);
             setDevices(devRes.data);
             setUsers(usrRes.data);
+            setGuests(guestRes.data);
             const aaSetting = setRes.data.find(s => s.key === 'autoApprove');
             if (aaSetting) setAutoApprove(aaSetting.value);
         } catch (err) { console.error(err); }
@@ -209,6 +225,7 @@ export default function AdminDashboard() {
     const TABS = [
         { key: 'devices', label: `Devices (${devices.length})` },
         { key: 'users', label: `Users (${users.length})` },
+        { key: 'guests', label: `Guests (${guests.length})` },
         { key: 'notify', label: `Notify`, icon: <Bell className="w-3.5 h-3.5" /> },
     ];
 
@@ -245,7 +262,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Tabs */}
-            <div className="grid grid-cols-3 sm:flex gap-1 p-1 bg-[#22222d] border border-[#3f3f4e] rounded-xl mb-6 sm:mb-8 sm:w-fit shadow-inner">
+            <div className="grid grid-cols-2 sm:flex gap-1 p-1 bg-[#22222d] border border-[#3f3f4e] rounded-xl mb-6 sm:mb-8 sm:w-fit shadow-inner">
                 {TABS.map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
                         className={`flex items-center justify-center gap-1.5 px-2 sm:px-6 py-2.5 rounded-lg font-mono font-bold text-xs sm:text-sm whitespace-nowrap transition-all ${tab === t.key ? 'bg-orange-500 text-black shadow-[0_0_20px_rgba(249,115,22,0.4)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
@@ -413,6 +430,60 @@ export default function AdminDashboard() {
                     ))}
                     {users.length === 0 && (
                         <div className="text-center py-16 text-[#666] font-mono uppercase tracking-widest">No users found</div>
+                    )}
+                </div>
+            ) : tab === 'guests' ? (
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[
+                            { label: 'Here now', value: guests.filter(g => !g.endedAt).length },
+                            { label: 'Today', value: guests.filter(g => within(g.startedAt, DAY)).length },
+                            { label: 'Last 7d', value: guests.filter(g => within(g.startedAt, 7 * DAY)).length },
+                            {
+                                label: 'Avg visit', value: (() => {
+                                    const ended = guests.filter(g => g.endedAt);
+                                    if (!ended.length) return '—';
+                                    return formatDuration(ended.reduce((sum, g) => sum + (new Date(g.endedAt) - new Date(g.startedAt)), 0) / ended.length);
+                                })()
+                            },
+                        ].map(u => (
+                            <div key={u.label} className="bg-[#0e0e0e] border border-[#2a2a2a] rounded-lg px-3 py-2.5">
+                                <div className="text-2xl font-black font-mono text-white">{u.value}</div>
+                                <div className="text-[10px] font-mono uppercase tracking-widest text-[#888] mt-0.5">{u.label}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="text-[#777] font-mono text-[11px] leading-relaxed">
+                        Guest accounts and their devices are deleted when the visit ends; this log is kept.
+                    </p>
+                    {guests.map(g => {
+                        const live = !g.endedAt;
+                        const end = live ? new Date(g.lastSeenAt) : new Date(g.endedAt);
+                        return (
+                            <div key={g._id} className={`bg-[#0e0e0e] border rounded-xl p-3 sm:p-4 flex items-start gap-3 ${live ? 'border-sky-500/40' : 'border-[#2a2a2a]'}`}>
+                                <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center border ${live ? 'border-sky-500/40 bg-sky-500/10' : 'border-[#2a2a2a] bg-[#181818]'}`}>
+                                    <UserRound className={`w-5 h-5 ${live ? 'text-sky-400' : 'text-[#777]'}`} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className="text-white font-mono font-bold text-sm">{g.name}</h3>
+                                        <span className="flex items-center gap-1 text-[10px] font-mono text-[#888]">
+                                            {g.device === 'Mobile' ? <Smartphone className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}{g.device}
+                                        </span>
+                                        {live && <span className="text-[10px] px-2 py-0.5 rounded font-mono text-sky-400 bg-sky-500/10 border border-sky-500/30 uppercase tracking-widest">Here now</span>}
+                                    </div>
+                                    <p className="text-[#999] font-mono text-xs mt-1 leading-relaxed">
+                                        Came {formatTime(g.startedAt)} · {live ? `on for ${formatDuration(Date.now() - new Date(g.startedAt))}` : `left after ${formatDuration(end - new Date(g.startedAt))}`}
+                                    </p>
+                                    <p className="text-[#777] font-mono text-[11px] mt-0.5">
+                                        {g.devicesCreated || 0} {g.devicesCreated === 1 ? 'device' : 'devices'} created{!live && ` · ${END_REASONS[g.endReason] || 'ended'}`}
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {guests.length === 0 && (
+                        <div className="text-center py-16 text-[#666] font-mono uppercase tracking-widest">No guest visits yet</div>
                     )}
                 </div>
             ) : (

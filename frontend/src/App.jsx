@@ -11,6 +11,7 @@ import Landing from './pages/Landing';
 import WebEditor from './pages/WebEditor';
 import { Cpu, LogOut, LayoutDashboard, Shield, Sun, Moon, User, Menu, X, Bell, Code2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { isGuest, endGuestSession, sendGuestHeartbeat } from './utils/guest';
 
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
@@ -73,13 +74,17 @@ function NavContent({ auth, setAuth, dark, toggle, mobile, onClose }) {
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
             <span>{displayName || username}</span>
             {role === 'admin' && <span className="text-orange-500 text-xs border border-orange-500/40 px-2 py-0.5 rounded">ADMIN</span>}
+            {isGuest() && <span className="text-sky-400 text-xs border border-sky-400/40 px-2 py-0.5 rounded">GUEST</span>}
           </div>
 
           <button
-            onClick={() => { localStorage.clear(); setAuth({ token: null, role: null, username: null }); window.location.href = '/login'; }}
+            onClick={() => {
+              if (isGuest() && !confirm('Leave guest mode? Your guest account and its devices will be deleted.')) return;
+              if (isGuest()) endGuestSession('logout');
+              localStorage.clear(); setAuth({ token: null, role: null, username: null }); window.location.href = '/login'; }}
             className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white transition-all">
             <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline">Logout</span>
+            <span className="hidden sm:inline">{isGuest() ? 'End guest' : 'Logout'}</span>
           </button>
         </>
       )}
@@ -91,6 +96,24 @@ function AppShell({ auth, setAuth, dark, toggle }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notification, setNotification] = useState(null);
   const location = useLocation();
+
+  const [betaDismissed, setBetaDismissed] = useState(() => {
+    try { return sessionStorage.getItem('betaNoticeDismissed') === '1'; } catch { return false; }
+  });
+  const dismissBeta = () => {
+    setBetaDismissed(true);
+    try { sessionStorage.setItem('betaNoticeDismissed', '1'); } catch { }
+  };
+
+  // Guests keep their session alive with a heartbeat; when it stops, the server deletes them
+  useEffect(() => {
+    if (!auth.token || !isGuest()) return;
+    sendGuestHeartbeat();
+    const timer = setInterval(sendGuestHeartbeat, 60 * 1000);
+    const onVisible = () => document.visibilityState === 'visible' && sendGuestHeartbeat();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [auth.token]);
 
   // Close mobile menu on route change
   useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -122,6 +145,7 @@ function AppShell({ auth, setAuth, dark, toggle }) {
             IoIoT
           </h1>
           <span className={`hidden sm:inline text-[10px] font-mono tracking-widest border px-2 py-0.5 rounded ${dark ? 'text-orange-500/60 border-orange-500/20' : 'text-orange-600 border-orange-400/30'}`}>v2.0</span>
+          <span className="text-[9px] sm:text-[10px] font-mono font-black tracking-widest px-1.5 sm:px-2 py-0.5 rounded bg-yellow-400/15 text-yellow-400 border border-yellow-400/40">BETA</span>
         </Link>
 
         {/* Desktop Nav */}
@@ -139,6 +163,22 @@ function AppShell({ auth, setAuth, dark, toggle }) {
       {menuOpen && (
         <div className={`sm:hidden flex flex-col gap-3 px-4 py-4 border-b ${dark ? 'bg-black/80 border-[#222]' : 'bg-white/90 border-gray-200'}`}>
           <NavContent auth={auth} setAuth={setAuth} dark={dark} toggle={toggle} mobile onClose={() => setMenuOpen(false)} />
+        </div>
+      )}
+
+      {/* Beta / guest notice */}
+      {auth.token && isGuest() ? (
+        <div className={`px-4 py-2 text-xs font-mono border-b flex items-center justify-center gap-2 text-center ${dark ? 'bg-sky-500/10 border-sky-500/30 text-sky-300' : 'bg-sky-50 border-sky-200 text-sky-800'}`}>
+          <span>👤 You're using a guest account. It and any devices you add are deleted when you close the browser.</span>
+        </div>
+      ) : !betaDismissed && (
+        <div className={`px-4 py-2 text-xs font-mono border-b flex items-start sm:items-center justify-center gap-3 ${dark ? 'bg-yellow-400/10 border-yellow-400/30 text-yellow-200' : 'bg-yellow-50 border-yellow-200 text-yellow-900'}`}>
+          <span className="flex-1 sm:flex-none text-center leading-relaxed">
+            <b>Beta:</b> this website is still under development and may have bugs. Thanks for your patience and cooperation!
+          </span>
+          <button onClick={dismissBeta} className="shrink-0 opacity-60 hover:opacity-100" title="Dismiss">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
