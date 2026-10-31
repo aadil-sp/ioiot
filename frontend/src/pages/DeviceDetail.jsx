@@ -16,6 +16,7 @@ import CustomActionEditor from '../components/CustomActionEditor';
 import CustomActionWidget from '../components/CustomActionWidget';
 import HistoryPanel from '../components/HistoryPanel';
 import AutomationsPanel from '../components/AutomationsPanel';
+import Dashboard from '../components/Dashboard';
 
 const API = import.meta.env.VITE_API_URL || '';
 const socket = io(API);
@@ -165,6 +166,7 @@ export default function DeviceDetail() {
     const [device, setDevice] = useState(null);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState('control');
+    const [dashEditing, setDashEditing] = useState(false);
     const [editingPins, setEditingPins] = useState([]);
     const [savingPins, setSavingPins] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
@@ -232,9 +234,11 @@ export default function DeviceDetail() {
             if (data.deviceId === id) {
                 setDevice(prev => {
                     if (!prev) return prev;
-                    const pins = prev.pins.map(p =>
-                        p.widgetKey === data.widgetKey ? { ...p, value: data.value } : p
-                    );
+                    // Control echoes name one pin; sensor reports carry the full state
+                    const pins = prev.pins.map(p => {
+                        if (data.widgetKey !== undefined) return p.widgetKey === data.widgetKey ? { ...p, value: data.value } : p;
+                        return data.state && p.widgetKey in data.state ? { ...p, value: data.state[p.widgetKey] } : p;
+                    });
                     return { ...prev, pins };
                 });
             }
@@ -249,6 +253,9 @@ export default function DeviceDetail() {
                 setEditingPins(JSON.parse(JSON.stringify(data.pins || [])));
             }
         });
+        socket.on('deviceDashboardUpdate', data => {
+            if (data.deviceId === id) setDevice(prev => prev ? { ...prev, dashboard: data.dashboard } : prev);
+        });
         socket.on('deviceActionsUpdate', data => {
             if (data.deviceId === id) {
                 setCustomActions(data.customActions || []);
@@ -260,6 +267,7 @@ export default function DeviceDetail() {
             socket.off('deviceStatusUpdate');
             socket.off('deviceConfigUpdate');
             socket.off('deviceActionsUpdate');
+            socket.off('deviceDashboardUpdate');
             socket.off('connect', watch);
             socket.emit('unwatchDevice', { deviceId: id });
         };
@@ -1252,8 +1260,21 @@ ${heartbeatFields}
                             </div>
                         )}
 
-                        {/* Regular pin widgets */}
-                        {device.pins.length === 0 && customActions.length === 0 ? (
+                        {/* Custom dashboard, or the classic per-pin widgets */}
+                        {device.pins.length > 0 && device.authToken && !dashEditing && (
+                            <div className="flex justify-end mb-3">
+                                <button onClick={() => setDashEditing(true)}
+                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono font-bold border transition-all ${dark ? 'border-orange-500/40 text-orange-400 hover:bg-orange-500/10' : 'border-orange-300 text-orange-600 hover:bg-orange-50'}`}>
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                    {device.dashboard?.length ? 'Edit dashboard' : 'Build custom dashboard'}
+                                </button>
+                            </div>
+                        )}
+                        {(device.dashboard?.length > 0 || dashEditing) ? (
+                            <Dashboard device={device} dark={dark} canEdit={!!device.authToken}
+                                editing={dashEditing} setEditing={setDashEditing} onControl={sendControl}
+                                onSaved={(dashboard) => setDevice(prev => ({ ...prev, dashboard }))} />
+                        ) : device.pins.length === 0 && customActions.length === 0 ? (
                             <div className={`flex flex-col items-center justify-center h-52 border-2 border-dashed rounded-2xl text-center ${dark ? 'border-[#1a1a1a]' : 'border-gray-200'}`}>
                                 <Zap className={`w-10 h-10 mb-3 ${dark ? 'text-[#222]' : 'text-gray-200'}`} />
                                 <p className={`font-mono text-sm ${dark ? 'text-[#444]' : 'text-gray-400'}`}>No pins configured yet</p>

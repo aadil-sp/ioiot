@@ -37,6 +37,22 @@ const actionSchema = new mongoose.Schema({
     widgetSize: { type: String, enum: ['sm', 'md', 'lg', 'full'], default: 'lg' },
 }, { _id: false });
 
+// A widget on the device's custom dashboard. Widgets flow in order on a grid;
+// w is columns (1-4) and h is rows (1-3).
+const dashboardWidgetSchema = new mongoose.Schema({
+    id: { type: String, required: true },
+    type: { type: String, enum: ['switch', 'button', 'slider', 'value', 'gauge', 'led', 'chart', 'label'], required: true },
+    key: { type: String, default: '' },
+    title: { type: String, default: '', maxlength: 40 },
+    w: { type: Number, default: 1, min: 1, max: 4 },
+    h: { type: Number, default: 1, min: 1, max: 3 },
+    color: { type: String, default: '#f97316' },
+    min: { type: Number, default: 0 },
+    max: { type: Number, default: 100 },
+    unit: { type: String, default: '', maxlength: 10 },
+    range: { type: String, enum: ['1h', '24h', '7d'], default: '1h' },
+}, { _id: false });
+
 const deviceSchema = new mongoose.Schema({
     deviceId: { type: String, required: true, unique: true },
     name: { type: String, default: 'My Device' },
@@ -51,6 +67,7 @@ const deviceSchema = new mongoose.Schema({
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     pins: [pinSchema],
     customActions: [actionSchema],
+    dashboard: [dashboardWidgetSchema],
     wifiSSID: { type: String, default: '' },
     wifiPassword: { type: String, default: '' },
     latestFirmware: {

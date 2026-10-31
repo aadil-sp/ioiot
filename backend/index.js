@@ -777,6 +777,37 @@ app.put('/api/devices/:id', authenticate, async (req, res) => {
     }
 });
 
+// Save the device's custom dashboard layout
+const WIDGET_TYPES = ['switch', 'button', 'slider', 'value', 'gauge', 'led', 'chart', 'label'];
+app.put('/api/devices/:id/dashboard', authenticate, async (req, res) => {
+    try {
+        const device = await Device.findOne({ deviceId: req.params.id });
+        if (!device) return res.status(404).json({ error: 'Device not found' });
+        if (!isOwnerOrAdmin(device, req.user)) return res.status(403).json({ error: 'Unauthorized' });
+        const widgets = Array.isArray(req.body.widgets) ? req.body.widgets.slice(0, 60) : [];
+        const clamp = (v, lo, hi, d) => Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d;
+        device.dashboard = widgets.filter(w => WIDGET_TYPES.includes(w.type)).map(w => ({
+            id: String(w.id || crypto.randomBytes(4).toString('hex')).slice(0, 24),
+            type: w.type,
+            key: String(w.key || '').slice(0, 64),
+            title: String(w.title || '').slice(0, 40),
+            w: clamp(w.w, 1, 4, 1),
+            h: clamp(w.h, 1, 3, 1),
+            color: /^#[0-9a-fA-F]{6}$/.test(w.color) ? w.color : '#f97316',
+            min: Number.isFinite(Number(w.min)) ? Number(w.min) : 0,
+            max: Number.isFinite(Number(w.max)) ? Number(w.max) : 100,
+            unit: String(w.unit || '').slice(0, 10),
+            range: ['1h', '24h', '7d'].includes(w.range) ? w.range : '1h',
+        }));
+        await device.save();
+        io.to(deviceRoom(device.deviceId)).emit('deviceDashboardUpdate', { deviceId: device.deviceId, dashboard: device.dashboard });
+        res.json({ dashboard: device.dashboard });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to save dashboard' });
+    }
+});
+
 // Admin toggle device live/public status
 app.post('/api/devices/:id/live', authenticate, requireAdmin, async (req, res) => {
     try {
