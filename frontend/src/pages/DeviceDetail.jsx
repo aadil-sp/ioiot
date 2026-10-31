@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useContext, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { mqttSigningCode } from '../utils/mqttSigning';
+import { wifiSetupCode } from '../utils/wifiSetup';
 import { io } from 'socket.io-client';
 import { ESPLoader, Transport } from 'esptool-js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -392,10 +393,8 @@ export default function DeviceDetail() {
 
     const generateUniversalCode = () => {
         if (!device) return '';
-        const ssid = cString(device.wifiSSID || 'demo');
-        const pass = cString(device.wifiPassword || '12345678');
-        const board = device.board || 'esp32';
-        
+        const wifiSetup = wifiSetupCode({ deviceId: device.deviceId, deviceName: device.name, ssid: device.wifiSSID, password: device.wifiPassword });
+
         return `// ================================================================
 // ${device.name} — IoIoT Universal Firmware
 // ================================================================
@@ -414,8 +413,6 @@ export default function DeviceDetail() {
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
-const char* ssid      = "${ssid}";
-const char* password  = "${pass}";
 const char* DEVICE_ID = "${device.deviceId}";
 const char* MQTT_HOST = "${cString(mqttConfig.host)}";
 const int   MQTT_PORT = ${parseInt(mqttConfig.port, 10) || 1883};
@@ -432,6 +429,8 @@ PubSubClient mqtt(wifiClient);
 Preferences  preferences;
 
 ${mqttSigningCode(device.authToken)}
+
+${wifiSetup}
 
 #define MAX_PINS 20
 struct PinConfig {
@@ -474,6 +473,7 @@ void loadConfig() {
       activePins[activePinCount].mode = p["mode"].as<String>();
       activePins[activePinCount].type = p["type"].as<String>();
       activePins[activePinCount].servoObj = nullptr;
+      if (activePins[activePinCount].pin == IOIOT_SETUP_BUTTON) ioiotSetupButtonEnabled = false;
       activePinCount++;
     }
     setupPins();
@@ -500,7 +500,7 @@ void setup() {
 
   loadConfig();
 
-  WiFi.begin(ssid, password);
+  ioiotWifiBegin();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
   mqtt.setBufferSize(4096);
@@ -557,6 +557,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 unsigned long lastHeartbeat = 0;
 
 void loop() {
+  ioiotWifiLoop();
   if (WiFi.status() == WL_CONNECTED) {
     if (!mqtt.connected()) reconnect();
     mqtt.loop();
@@ -575,8 +576,6 @@ void loop() {
         const board = device.board || 'esp32';
         const isArduino = ['uno', 'nano', 'mega'].includes(board);
         const isESP8266 = board === 'esp8266';
-        const ssid = cString(device.wifiSSID || 'demo');
-        const pass = cString(device.wifiPassword || '12345678');
         const isUSB = device.mode === 'usb';
 
         const pinMacroFn = (p) => `PIN_${sanitize(p.label)}`;
@@ -686,7 +685,9 @@ ${applyLogic || '    // Configure pins in Pin Config tab first'}
             return `    // doc["${key}"] = ...;`;
         }).join('\n');
 
-        const wifiLibMqtt = isESP8266 ? '#include <ESP8266WiFi.h>' : '#include <WiFi.h>';
+        const wifiSetup = wifiSetupCode({ deviceId: device.deviceId, deviceName: device.name, ssid: device.wifiSSID, password: device.wifiPassword });
+        // GPIO0 (and 9 on ESP32-C3) is the BOOT button used to reopen Wi-Fi setup
+        const bootPinInUse = device.pins.some(p => p.pinNumber === 0 || p.pinNumber === 9);
         const boardNameMqtt = board === 'esp8266' ? 'ESP8266' : 'ESP32';
 
         return `// ================================================================
@@ -702,13 +703,11 @@ ${applyLogic || '    // Configure pins in Pin Config tab first'}
 //   LWT:       ioiot/${device.deviceId}/status   -> offline detection
 // ================================================================
 
-${servoIncludes}${wifiLibMqtt}
-#include <PubSubClient.h>
+${servoIncludes}#include <PubSubClient.h>
 #include <ArduinoJson.h>
 ${board === 'esp32' ? '#include "soc/soc.h"\n#include "soc/rtc_cntl_reg.h"\n' : ''}
+${isESP8266 ? '#include <ESP8266WiFi.h>' : '#include <WiFi.h>'}
 
-const char* ssid      = "${ssid}";
-const char* password  = "${pass}";
 const char* DEVICE_ID = "${device.deviceId}";
 const char* MQTT_HOST = "${cString(mqttConfig.host)}";
 const int   MQTT_PORT = ${parseInt(mqttConfig.port, 10) || 1883};
@@ -731,6 +730,8 @@ const long    HEARTBEAT_INTERVAL = 5000;
 
 ${mqttSigningCode(device.authToken)}
 
+${wifiSetup}
+
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     static char buf[1024];
     if (length >= sizeof(buf)) return;
@@ -746,18 +747,9 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
 ${mqttCallbackCases || '    // Configure pins in Pin Config tab'}
 }
 
-void connectWifi() {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    Serial.print("WiFi");
-    int t = 0;
-    while (WiFi.status() != WL_CONNECTED && t++ < 40) { delay(500); Serial.print("."); }
-    if (WiFi.status() == WL_CONNECTED) Serial.println(" OK: " + WiFi.localIP().toString());
-    else { Serial.println(" FAILED. Restarting."); ESP.restart(); }
-}
-
 void connectMqtt() {
     while (!mqttClient.connected()) {
+        if (WiFi.status() != WL_CONNECTED) return;
         String cid = String("ioiot-") + String(DEVICE_ID) + "-" + String(random(0xffff), HEX);
         Serial.print("MQTT...");
         static char lwt[200];
@@ -781,8 +773,8 @@ ${board.includes('esp32') ? '    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // D
     snprintf(TOPIC_STATUS, sizeof(TOPIC_STATUS), "ioiot/%s/status",  DEVICE_ID);
 
 ${setupPins}
-
-    connectWifi();
+${bootPinInUse ? '    ioiotSetupButtonEnabled = false; // BOOT pin is used by your pin config\n' : ''}
+    ioiotWifiBegin();
     mqttClient.setServer(MQTT_HOST, MQTT_PORT);
     mqttClient.setCallback(onMqttMessage);
     mqttClient.setKeepAlive(60);
@@ -792,7 +784,8 @@ ${setupPins}
 }
 
 void loop() {
-    if (WiFi.status() != WL_CONNECTED) connectWifi();
+    ioiotWifiLoop();
+    if (WiFi.status() != WL_CONNECTED) return;
     if (!mqttClient.connected()) connectMqtt();
     mqttClient.loop();
 
@@ -1162,7 +1155,7 @@ ${heartbeatFields}
                         <p className="col-span-full font-mono text-[11px] text-yellow-500">Unsaved changes — click Save WiFi, then re-download or re-flash the code.</p>
                     )}
                     <p className={`col-span-full font-mono text-[10px] ${mutedText}`}>
-                        WiFi credentials are stored securely and auto-filled in generated code.
+                        Optional. The network saved here is built into the code. If the board can't connect, it opens a Wi-Fi hotspot named IoIoT-Setup-… — join it from your phone to pick a network, no re-flashing needed. Hold the BOOT button for 3 seconds to change Wi-Fi later.
                     </p>
                 </div>
             )}
