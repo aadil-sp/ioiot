@@ -22,8 +22,11 @@ jobs:
           git clone https://aadilsp:$HF_TOKEN@huggingface.co/spaces/aadilsp/ioiot-backend hf-space
 
           cp backend/index.js hf-space/index.js
+          mkdir -p hf-space/models hf-space/middleware
           cp -r backend/models/. hf-space/models/
           cp -r backend/middleware/. hf-space/middleware/
+          mkdir -p hf-space/routes
+          cp -r backend/routes/. hf-space/routes/
           cp backend/package.json hf-space/package.json
           cp backend/package-lock.json hf-space/package-lock.json
           cp backend/Dockerfile hf-space/Dockerfile

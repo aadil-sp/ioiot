@@ -41,10 +41,16 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         fetchAll();
+        const watch = () => socket.emit('watchAdmin', { token: localStorage.getItem('token') });
+        watch();
+        socket.on('connect', watch);
         socket.on('deviceLiveUpdate', ({ deviceId, isLive }) => {
             setDevices(prev => prev.map(d => d.deviceId === deviceId ? { ...d, isLive } : d));
         });
-        return () => socket.off('deviceLiveUpdate');
+        return () => {
+            socket.off('deviceLiveUpdate');
+            socket.off('connect', watch);
+        };
     }, []);
 
     const fetchAll = async () => {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { cacheProfile } from '../utils/profileCache';
 import { Fingerprint, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -20,6 +21,7 @@ export default function Login({ setAuth }) {
             localStorage.setItem('role', res.data.role);
             localStorage.setItem('username', res.data.username);
             if (res.data.userId) localStorage.setItem('userId', res.data.userId);
+            cacheProfile(res.data.profile);
             setAuth({
                 token: res.data.token,
                 role: res.data.role,

@@ -16,7 +16,7 @@ const mqtt = require('mqtt');
 const User = require('./models/User');
 const Device = require('./models/Device');
 const Settings = require('./models/Settings');
-const { authenticate, requireAdmin } = require('./middleware/auth');
+const { authenticate, requireAdmin, JWT_SECRET } = require('./middleware/auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,12 +28,23 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/iot-platform';
 
 // ─── MQTT Broker Setup ────────────────────────────────────────────────────────
+// MQTT_BROKER is how *this server* reaches the broker. Hugging Face Spaces only
+// allow outbound ports 80/443, so there use a WebSocket URL on 443
+// (e.g. wss://public.cloud.shiftr.io:443). Devices connect over plain TCP to
+// MQTT_DEVICE_HOST:MQTT_DEVICE_PORT (defaults: the broker's host, port 1883).
 const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://broker.hivemq.com';
+const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
+const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
+const MQTT_DEVICE_HOST = process.env.MQTT_DEVICE_HOST || new URL(MQTT_BROKER).hostname;
+const MQTT_DEVICE_PORT = parseInt(process.env.MQTT_DEVICE_PORT || '1883', 10);
+let mqttLastError = null;
+
 const mqttClient = mqtt.connect(MQTT_BROKER, {
+    username: MQTT_USERNAME || undefined,
+    password: MQTT_PASSWORD || undefined,
     clientId: `ioiot-backend-${crypto.randomBytes(4).toString('hex')}`,
     keepalive: 60,
     reconnectPeriod: 3000,
@@ -48,12 +59,50 @@ mqttClient.on('connect', () => {
 });
 
 mqttClient.on('error', (err) => {
+    mqttLastError = err.message;
     console.error('MQTT error:', err.message);
 });
 
 mqttClient.on('reconnect', () => {
     console.log('MQTT reconnecting...');
 });
+
+// ─── MQTT Message Signing ────────────────────────────────────────────────────
+// The broker is public, so every payload is signed with the device's authToken:
+//   "<hmac>|<session>|<seq>|<json>", hmac = HMAC-SHA256(authToken, "<kind>|<session>|<seq>|<json>")
+// kind is the last topic segment (command | config | state | status). The device
+// picks a random session on each boot and only accepts increasing seq numbers, so
+// captured commands can't be replayed. Must match frontend/src/utils/mqttSigning.js.
+const deviceSessions = new Map(); // deviceId -> { session, lastSeq } learned from the device
+const lastSentSeq = new Map();    // deviceId -> last seq we sent to it
+
+const hmacHex = (token, kind, session, seq, json) =>
+    crypto.createHmac('sha256', token).update(`${kind}|${session}|${seq}|${json}`).digest('hex');
+
+function verifySignedMessage(token, kind, payload) {
+    const m = /^([0-9a-f]{64})\|([0-9a-f]{16})\|(\d{1,20})\|([\s\S]*)$/.exec(payload.toString());
+    if (!m) return null;
+    const [, mac, session, seq, json] = m;
+    const expected = Buffer.from(hmacHex(token, kind, session, seq, json));
+    if (!crypto.timingSafeEqual(expected, Buffer.from(mac))) return null;
+    try { return { session, seq: BigInt(seq), data: JSON.parse(json) }; } catch { return null; }
+}
+
+// Publish a signed message to a device. Returns false if the device hasn't
+// checked in since this server started (we don't know its session yet).
+function publishSigned(device, kind, obj) {
+    const known = deviceSessions.get(device.deviceId);
+    if (!known) {
+        console.warn(`MQTT: no session for ${device.deviceId} yet — is the device online with signed firmware?`);
+        return false;
+    }
+    const seq = Math.max(Date.now(), (lastSentSeq.get(device.deviceId) || 0) + 1);
+    lastSentSeq.set(device.deviceId, seq);
+    const json = JSON.stringify(obj);
+    const payload = `${hmacHex(device.authToken, kind, known.session, seq, json)}|${known.session}|${seq}|${json}`;
+    mqttClient.publish(`ioiot/${device.deviceId}/${kind}`, payload, { qos: 1, retain: false });
+    return true;
+}
 
 // ─── MQTT → Socket.io Bridge ──────────────────────────────────────────────────
 // When ESP32 publishes state/sensor data, forward to web dashboard via socket.io
@@ -64,15 +113,34 @@ mqttClient.on('message', async (topic, payload) => {
 
         const deviceId = parts[1];
         const type = parts[2];
+        if (type !== 'state' && type !== 'status') return;
 
-        let data;
-        try { data = JSON.parse(payload.toString()); } catch { return; }
+        const device = await Device.findOne({ deviceId });
+        if (!device) return;
+
+        // Drop anything not signed by this device (forged, old firmware, or garbage)
+        const msg = verifySignedMessage(device.authToken, type, payload);
+        if (!msg) return;
+
+        const known = deviceSessions.get(deviceId);
+        const isLwt = type === 'status' && msg.data.online === false;
+        if (isLwt) {
+            // The offline will is signed once at connect time, so only check its session
+            if (!known || known.session !== msg.session) return;
+        } else if (known && known.session === msg.session) {
+            if (msg.seq <= known.lastSeq) return; // replayed
+            known.lastSeq = msg.seq;
+        } else {
+            // New boot (or we restarted) — adopt the device's new session and
+            // push the pin config so Universal Firmware boards work right after flashing
+            deviceSessions.set(deviceId, { session: msg.session, lastSeq: msg.seq });
+            publishSigned(device, 'config', { pins: device.pins });
+        }
+
+        const data = msg.data;
 
         if (type === 'state') {
             // Device is alive — mark online and process sensor values
-            const device = await Device.findOne({ deviceId });
-            if (!device) return;
-
             const wasOffline = !device.isConnected;
             device.isConnected = true;
             device.lastSeen = new Date();
@@ -81,7 +149,7 @@ mqttClient.on('message', async (topic, payload) => {
             const stateChanges = {};
             Object.entries(data).forEach(([key, val]) => {
                 const pin = device.pins.find(p => p.widgetKey === key);
-                if (pin && pin.mode === 'INPUT') {
+                if (pin && pin.mode !== 'OUTPUT') { // INPUT and INPUT_PULLUP
                     pin.value = val;
                     device.state.set(key, val);
                     stateChanges[key] = val;
@@ -91,28 +159,25 @@ mqttClient.on('message', async (topic, payload) => {
             await device.save();
 
             if (wasOffline) {
-                io.emit('deviceStatusUpdate', { deviceId, isConnected: true });
+                io.to(deviceRoom(deviceId)).emit('deviceStatusUpdate', { deviceId, isConnected: true });
             }
 
             if (Object.keys(stateChanges).length > 0) {
-                io.emit('deviceStateUpdate', {
+                io.to(deviceRoom(deviceId)).emit('deviceStateUpdate', {
                     deviceId,
                     state: Object.fromEntries(device.state)
                 });
             }
 
-        } else if (type === 'status') {
-            // LWT message — device went offline or came online
-            const device = await Device.findOne({ deviceId });
-            if (!device) return;
-
+        } else {
+            // Status / LWT — device went offline or came online
             const online = data.online === true;
             const changed = device.isConnected !== online;
             if (changed) {
                 device.isConnected = online;
                 if (online) device.lastSeen = new Date();
                 await device.save();
-                io.emit('deviceStatusUpdate', { deviceId, isConnected: online });
+                io.to(deviceRoom(deviceId)).emit('deviceStatusUpdate', { deviceId, isConnected: online });
             }
         }
     } catch (err) {
@@ -120,21 +185,27 @@ mqttClient.on('message', async (topic, payload) => {
     }
 });
 
-// Helper: publish a command to a device via MQTT
-function publishCommand(deviceId, widgetKey, value) {
-    const topic = `ioiot/${deviceId}/command`;
-    const payload = JSON.stringify({ [widgetKey]: value });
-    mqttClient.publish(topic, payload, { qos: 1, retain: false });
+// Helper: publish a signed command to a device via MQTT
+function publishCommand(device, widgetKey, value) {
+    return publishSigned(device, 'command', { [widgetKey]: value });
 }
+
+// Socket.io room for a device — only its owner, admins and (for live devices) viewers join it
+const deviceRoom = (deviceId) => `device:${deviceId}`;
+
+const isOwnerOrAdmin = (device, user) => {
+    const ownerId = (device.owner?._id || device.owner)?.toString();
+    return ownerId === user.id || user.role === 'admin';
+};
 
 // ─── Connect to MongoDB ──────────────────────────────────────────────────────
 mongoose.connect(MONGO_URI).then(async () => {
     console.log('MongoDB connected');
 
-    // Seed admin
+    // Seed admin only when ADMIN_PASSWORD is provided (no hardcoded passwords)
     const adminExists = await User.findOne({ username: 'admin' });
-    if (!adminExists) {
-        const hashedAdmin = await bcrypt.hash('admin@123', 10);
+    if (!adminExists && process.env.ADMIN_PASSWORD) {
+        const hashedAdmin = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
         const admin = await User.create({ username: 'admin', password: hashedAdmin, role: 'admin', isApproved: true });
         console.log('Admin user seeded');
 
@@ -156,20 +227,6 @@ mongoose.connect(MONGO_URI).then(async () => {
             });
             console.log('RC Plane demo device seeded');
         }
-    }
-
-    const userExists = await User.findOne({ username: 'abhiram' });
-    if (!userExists) {
-        const hashedUser = await bcrypt.hash('abhiram@123', 10);
-        await User.create({ username: 'abhiram', password: hashedUser, role: 'user', isApproved: true });
-        console.log('Test user abhiram seeded');
-    }
-
-    const shopExists = await User.findOne({ username: 'nirmala' });
-    if (!shopExists) {
-        const hashedShop = await bcrypt.hash('nirmala@123', 10);
-        await User.create({ username: 'nirmala', password: hashedShop, role: 'shopkeeper', isApproved: true, shopName: 'Nirmala Printers' });
-        console.log('Test shop nirmala seeded');
     }
 }).catch(err => console.error('MongoDB connection error', err));
 
@@ -214,7 +271,7 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(403).json({ error: 'Account not approved yet' });
         }
         const token = jwt.sign({ id: user._id, role: user.role, username: user.username }, JWT_SECRET);
-        res.json({ token, role: user.role, username: user.username, userId: user._id, walletBalance: user.walletBalance || 0 });
+        res.json({ token, role: user.role, username: user.username, userId: user._id, walletBalance: user.walletBalance || 0, profile: user.profile });
     } catch (error) {
         res.status(500).json({ error: 'Login failed' });
     }
@@ -227,12 +284,40 @@ app.post('/api/auth/change-password', authenticate, async (req, res) => {
         const user = await User.findById(req.user.id);
         if (!user) return res.status(404).json({ error: 'User not found' });
         const match = await bcrypt.compare(oldPassword, user.password);
-        if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
+        if (!match) return res.status(400).json({ error: 'Current password is incorrect' });
         user.password = await bcrypt.hash(newPassword, 10);
         await user.save();
         res.json({ message: 'Password changed successfully' });
     } catch (err) {
         res.status(500).json({ error: 'Failed to change password' });
+    }
+});
+
+// ─── Profile ─────────────────────────────────────────────────────────────────
+app.get('/api/profile', authenticate, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        res.json({ username: user.username, role: user.role, profile: user.profile });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to load profile' });
+    }
+});
+
+app.put('/api/profile', authenticate, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        const { displayName, bio, avatarColor, betaMode, notifications } = req.body;
+        if (typeof displayName === 'string') user.profile.displayName = displayName.slice(0, 50);
+        if (typeof bio === 'string') user.profile.bio = bio.slice(0, 300);
+        if (typeof avatarColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(avatarColor)) user.profile.avatarColor = avatarColor;
+        if (typeof betaMode === 'boolean') user.profile.betaMode = betaMode;
+        if (typeof notifications === 'boolean') user.profile.notifications = notifications;
+        await user.save();
+        res.json({ profile: user.profile });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to save profile' });
     }
 });
 
@@ -321,7 +406,11 @@ app.get('/api/devices', authenticate, async (req, res) => {
                 $or: [{ owner: req.user.id }, { isLive: true }]
             }).populate('owner', 'username');
         }
-        res.json(devices);
+        res.json(devices.map(d => {
+            if (isOwnerOrAdmin(d, req.user)) return d;
+            const { authToken, wifiSSID, wifiPassword, latestFirmware, ...rest } = d.toObject();
+            return rest;
+        }));
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch devices' });
     }
@@ -384,7 +473,7 @@ app.post('/api/devices/:id/live', authenticate, requireAdmin, async (req, res) =
         device.isLive = !device.isLive;
         await device.save();
         console.log('Device', device.deviceId, 'isLive now:', device.isLive);
-        io.emit('deviceLiveUpdate', { deviceId: device.deviceId, isLive: device.isLive });
+        io.to('admins').emit('deviceLiveUpdate', { deviceId: device.deviceId, isLive: device.isLive });
         res.json({ isLive: device.isLive });
     } catch (err) {
         console.error('Toggle live error:', err);
@@ -421,10 +510,10 @@ app.put('/api/devices/:id/pins', authenticate, async (req, res) => {
         device.pins = pins;
         pins.forEach(p => device.state.set(p.widgetKey, p.value));
         await device.save();
-        io.emit('deviceConfigUpdate', { deviceId: device.deviceId, pins: device.pins });
+        io.to(deviceRoom(device.deviceId)).emit('deviceConfigUpdate', { deviceId: device.deviceId, pins: device.pins });
         
         if (device.mode === 'wifi' && mqttClient?.connected) {
-            mqttClient.publish(`ioiot/${device.deviceId}/config`, JSON.stringify({ pins: device.pins }));
+            publishSigned(device, 'config', { pins: device.pins });
         }
         
         res.json(device);
@@ -446,7 +535,7 @@ app.put('/api/devices/:id/actions', authenticate, async (req, res) => {
         device.customActions = req.body.customActions || [];
         device.markModified('customActions');
         await device.save();
-        io.emit('deviceActionsUpdate', { deviceId: device.deviceId, customActions: device.customActions });
+        io.to(deviceRoom(device.deviceId)).emit('deviceActionsUpdate', { deviceId: device.deviceId, customActions: device.customActions });
         res.json({ customActions: device.customActions });
     } catch (err) {
         console.error('Actions save error:', err);
@@ -471,10 +560,10 @@ app.post('/api/devices/:id/control', authenticate, async (req, res) => {
         device.markModified('pins');
 
         // Publish to MQTT immediately
-        publishCommand(device.deviceId, widgetKey, value);
+        publishCommand(device, widgetKey, value);
 
         // Notify web clients via socket.io
-        io.emit('deviceStateUpdate', {
+        io.to(deviceRoom(device.deviceId)).emit('deviceStateUpdate', {
             deviceId: device.deviceId,
             widgetKey,
             value,
@@ -495,15 +584,16 @@ app.post('/api/devices/:id/toggle', authenticate, async (req, res) => {
         const { toggleType, state } = req.body;
         const device = await Device.findOne({ deviceId: req.params.id });
         if (!device) return res.status(404).json({ error: 'Device not found' });
+        if (!isOwnerOrAdmin(device, req.user)) return res.status(403).json({ error: 'Unauthorized' });
 
         device.state.set(toggleType, state);
         const pin = device.pins.find(p => p.widgetKey === toggleType);
         if (pin) pin.value = state;
 
         // Publish to MQTT
-        publishCommand(device.deviceId, toggleType, state);
+        publishCommand(device, toggleType, state);
 
-        io.emit('deviceStateUpdate', {
+        io.to(deviceRoom(device.deviceId)).emit('deviceStateUpdate', {
             deviceId: device.deviceId,
             widgetKey: toggleType,
             value: state,
@@ -519,11 +609,42 @@ app.post('/api/devices/:id/toggle', authenticate, async (req, res) => {
 
 // ─── Keep-Alive & Misc ────────────────────────────────────────────────────────
 app.get('/api/ping', (req, res) => {
-    res.json({ status: 'active', timestamp: new Date() });
+    res.json({
+        status: 'active',
+        timestamp: new Date(),
+        mqtt: { connected: mqttClient.connected, broker: new URL(MQTT_BROKER).host, lastError: mqttClient.connected ? null : mqttLastError },
+    });
+});
+
+// Broker settings baked into generated firmware (so devices and server use the same broker).
+// Every device shares these credentials; commands are still protected by per-device signing.
+app.get('/api/mqtt-config', authenticate, (req, res) => {
+    res.json({ host: MQTT_DEVICE_HOST, port: MQTT_DEVICE_PORT, username: MQTT_USERNAME, password: MQTT_PASSWORD });
 });
 
 // ─── Socket.io ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
+    // Clients must subscribe per device; updates are only sent to authorized rooms
+    socket.on('watchDevice', async ({ deviceId, token } = {}) => {
+        try {
+            const user = jwt.verify(token, JWT_SECRET);
+            const device = await Device.findOne({ deviceId });
+            if (!device) return;
+            if (isOwnerOrAdmin(device, user) || device.isLive) socket.join(deviceRoom(deviceId));
+        } catch { }
+    });
+
+    socket.on('unwatchDevice', ({ deviceId } = {}) => {
+        socket.leave(deviceRoom(deviceId));
+    });
+
+    socket.on('watchAdmin', ({ token } = {}) => {
+        try {
+            const user = jwt.verify(token, JWT_SECRET);
+            if (user.role === 'admin') socket.join('admins');
+        } catch { }
+    });
+
     // --- INSTANT CONTROL VIA SOCKETS (Web → MQTT → ESP32) ---
     socket.on('sendControl', async (data) => {
         try {
@@ -538,8 +659,7 @@ io.on('connection', (socket) => {
             if (!device) return;
 
             // Auth check
-            const ownerId = (device.owner?._id || device.owner)?.toString();
-            if (ownerId !== user._id.toString() && user.role !== 'admin') return;
+            if (!isOwnerOrAdmin(device, { id: user._id.toString(), role: user.role })) return;
 
             // Update pin value
             const pinIndex = device.pins.findIndex(p => p.widgetKey === widgetKey);
@@ -549,10 +669,10 @@ io.on('connection', (socket) => {
             device.markModified('pins');
 
             // 1. Publish command to MQTT broker → ESP32 gets it instantly
-            publishCommand(deviceId, widgetKey, value);
+            publishCommand(device, widgetKey, value);
 
             // 2. Broadcast to all web clients via socket.io
-            io.emit('deviceStateUpdate', {
+            io.to(deviceRoom(deviceId)).emit('deviceStateUpdate', {
                 deviceId,
                 widgetKey,
                 value,
@@ -578,10 +698,30 @@ app.get('/', (req, res) => {
 });
 
 // ─── ESP32 Compile Endpoint ──────────────────────────────────────────────────
+// Public (used by the Web Editor), so cap code size and concurrent compiles
+const MAX_CODE_BYTES = 256 * 1024;
+const MAX_CONCURRENT_COMPILES = 3;
+const FQBN_PATTERN = /^[a-z0-9_-]+:[a-z0-9_-]+:[A-Za-z0-9_-]+(:[A-Za-z0-9_=,.-]+)?$/;
+const activeCompiles = new Set(); // client IPs with a compile in progress
+
 app.post('/api/compile', async (req, res) => {
     const { code, board = 'esp32:esp32:esp32' } = req.body;
-    if (!code || !code.trim()) {
+    if (typeof code !== 'string' || !code.trim()) {
         return res.status(400).json({ error: 'No code provided' });
+    }
+    if (Buffer.byteLength(code, 'utf8') > MAX_CODE_BYTES) {
+        return res.status(413).json({ error: 'Code is too large to compile' });
+    }
+    if (typeof board !== 'string' || !FQBN_PATTERN.test(board)) {
+        return res.status(400).json({ error: 'Invalid board' });
+    }
+
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+    if (activeCompiles.has(clientIp)) {
+        return res.status(429).json({ error: 'A compile is already running. Please wait for it to finish.' });
+    }
+    if (activeCompiles.size >= MAX_CONCURRENT_COMPILES) {
+        return res.status(503).json({ error: 'Compile server is busy. Please try again in a minute.' });
     }
 
     const checkCli = spawn('which', ['arduino-cli']);
@@ -599,6 +739,9 @@ app.post('/api/compile', async (req, res) => {
     const sse = (type, data) => {
         try { res.write(`data: ${JSON.stringify({ type, data })}\n\n`); } catch { }
     };
+
+    activeCompiles.add(clientIp);
+    res.on('close', () => activeCompiles.delete(clientIp));
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ioiot-'));
     const sketchName = 'ioiot_device';
@@ -740,10 +883,16 @@ app.post('/api/devices/:id/firmware', authenticate, async (req, res) => {
     }
 });
 
+// Devices must pass their authToken: GET /api/esp/ota/:id?token=<authToken>
 app.get('/api/esp/ota/:id', async (req, res) => {
     try {
         const device = await Device.findOne({ deviceId: req.params.id });
-        if (!device || !device.latestFirmware) return res.status(404).send('No firmware');
+        const token = String(req.query.token || req.header('x-device-token') || '');
+        const expected = Buffer.from(device?.authToken || '');
+        const given = Buffer.from(token);
+        if (!device || given.length !== expected.length || !crypto.timingSafeEqual(given, expected))
+            return res.status(401).send('Unauthorized');
+        if (!device.latestFirmware) return res.status(404).send('No firmware');
         res.sendFile(device.latestFirmware.filePath);
     } catch (err) {
         res.status(500).send('Server error');

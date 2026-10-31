@@ -19,10 +19,24 @@ const storage = multer.diskStorage({
         cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage });
+// Only accept printable documents/images (files are served publicly from /uploads)
+const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.txt', '.png', '.jpg', '.jpeg'];
+const upload = multer({
+    storage,
+    limits: { fileSize: 25 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const ok = ALLOWED_EXTENSIONS.includes(path.extname(file.originalname).toLowerCase());
+        cb(ok ? null : new Error('Unsupported file type'), ok);
+    }
+});
 
 // ─── Upload File Endpoint ───────────────────────────────────────────────────
-router.post('/upload', upload.single('document'), (req, res) => {
+router.post('/upload', (req, res, next) => {
+    upload.single('document')(req, res, (err) => {
+        if (err) return res.status(400).json({ error: err.message });
+        next();
+    });
+}, (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
     res.json({ fileUrl, fileName: req.file.originalname });

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useContext, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { mqttSigningCode } from '../utils/mqttSigning';
 import { io } from 'socket.io-client';
 import { ESPLoader, Transport } from 'esptool-js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -169,6 +170,9 @@ export default function DeviceDetail() {
     const [showWifi, setShowWifi] = useState(false);
     const [wifiSSID, setWifiSSID] = useState('');
     const [wifiPassword, setWifiPassword] = useState('');
+    const [wifiStatus, setWifiStatus] = useState(''); // '' | 'saving' | 'saved' | 'error:<msg>'
+    // Broker the generated firmware connects to — comes from the backend so both always match
+    const [mqttConfig, setMqttConfig] = useState({ host: 'broker.hivemq.com', port: 1883, username: '', password: '' });
     const [showWifiPass, setShowWifiPass] = useState(false);
     const [savingWifi, setSavingWifi] = useState(false);
     const [showPresets, setShowPresets] = useState(false);
@@ -210,10 +214,18 @@ export default function DeviceDetail() {
     }, [id]);
 
     useEffect(() => {
+        axios.get(`${API}/api/mqtt-config`, { headers }).then(res => setMqttConfig(res.data)).catch(() => { });
+    }, []);
+
+    useEffect(() => {
         fetchDevice();
         const heartbeat = setInterval(() => {
             axios.get(`${import.meta.env.VITE_API_URL || ''}/api/ping`).catch(() => { });
         }, 60000);
+        // Subscribe to this device's live updates (re-subscribe after reconnects)
+        const watch = () => socket.emit('watchDevice', { deviceId: id, token: localStorage.getItem('token') });
+        watch();
+        socket.on('connect', watch);
         socket.on('deviceStateUpdate', data => {
             if (data.deviceId === id) {
                 setDevice(prev => {
@@ -246,6 +258,8 @@ export default function DeviceDetail() {
             socket.off('deviceStatusUpdate');
             socket.off('deviceConfigUpdate');
             socket.off('deviceActionsUpdate');
+            socket.off('connect', watch);
+            socket.emit('unwatchDevice', { deviceId: id });
         };
     }, [id]);
 
@@ -363,10 +377,13 @@ export default function DeviceDetail() {
     };
 
     // ─── Code Generator ──────────────────────────────────────────────────────
+    // Escape a value for use inside a C string literal (Wi-Fi names/passwords can contain " or \)
+    const cString = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
     const generateUniversalCode = () => {
         if (!device) return '';
-        const ssid = device.wifiSSID || 'demo';
-        const pass = device.wifiPassword || '12345678';
+        const ssid = cString(device.wifiSSID || 'demo');
+        const pass = cString(device.wifiPassword || '12345678');
         const board = device.board || 'esp32';
         
         return `// ================================================================
@@ -390,8 +407,10 @@ export default function DeviceDetail() {
 const char* ssid      = "${ssid}";
 const char* password  = "${pass}";
 const char* DEVICE_ID = "${device.deviceId}";
-const char* MQTT_HOST = "broker.hivemq.com";
-const int   MQTT_PORT = 1883;
+const char* MQTT_HOST = "${cString(mqttConfig.host)}";
+const int   MQTT_PORT = ${parseInt(mqttConfig.port, 10) || 1883};
+const char* MQTT_USER = "${cString(mqttConfig.username || '')}";
+const char* MQTT_PASS = "${cString(mqttConfig.password || '')}";
 
 char TOPIC_CMD[64];
 char TOPIC_STATE[64];
@@ -401,6 +420,8 @@ char TOPIC_STATUS[64];
 WiFiClient   wifiClient;
 PubSubClient mqtt(wifiClient);
 Preferences  preferences;
+
+${mqttSigningCode(device.authToken)}
 
 #define MAX_PINS 20
 struct PinConfig {
@@ -461,6 +482,7 @@ void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 #endif
   Serial.begin(115200);
+  ioiotNewSession();
   snprintf(TOPIC_CMD, 64, "ioiot/%s/command", DEVICE_ID);
   snprintf(TOPIC_STATE, 64, "ioiot/%s/state", DEVICE_ID);
   snprintf(TOPIC_CONFIG, 64, "ioiot/%s/config", DEVICE_ID);
@@ -471,13 +493,16 @@ void setup() {
   WiFi.begin(ssid, password);
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
+  mqtt.setBufferSize(4096);
 }
 
 void reconnect() {
   while (!mqtt.connected()) {
     if (WiFi.status() != WL_CONNECTED) return;
-    if (mqtt.connect(DEVICE_ID, NULL, NULL, TOPIC_STATUS, 1, true, "offline")) {
-      mqtt.publish(TOPIC_STATUS, "online", true);
+    static char lwt[200];
+    ioiotSignInto("status", 0, "{\\"online\\":false}", lwt, sizeof(lwt));
+    if (mqtt.connect(DEVICE_ID, MQTT_USER[0] ? MQTT_USER : NULL, MQTT_PASS[0] ? MQTT_PASS : NULL, TOPIC_STATUS, 1, true, lwt)) {
+      ioiotPublish(mqtt, TOPIC_STATUS, "status", "{\\"online\\":true}", true);
       mqtt.subscribe(TOPIC_CMD);
       mqtt.subscribe(TOPIC_CONFIG);
     } else {
@@ -487,16 +512,22 @@ void reconnect() {
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  payload[length] = '\\0';
-  String msg = String((char*)payload);
-  
-  if (String(topic) == TOPIC_CONFIG) {
-    saveConfig(msg);
+  static char buf[4096];
+  if (length >= sizeof(buf)) return;
+  memcpy(buf, payload, length);
+  buf[length] = 0;
+
+  bool isConfig = String(topic) == TOPIC_CONFIG;
+  const char* json = ioiotVerify(isConfig ? "config" : "command", buf);
+  if (!json) { Serial.println("Ignored unsigned/invalid message"); return; }
+
+  if (isConfig) {
+    saveConfig(String(json));
     return;
   }
   
   StaticJsonDocument<512> doc;
-  if (deserializeJson(doc, msg)) return;
+  if (deserializeJson(doc, json)) return;
 
   for (int i = 0; i < activePinCount; i++) {
     String key = activePins[i].widgetKey;
@@ -513,10 +544,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
+unsigned long lastHeartbeat = 0;
+
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!mqtt.connected()) reconnect();
     mqtt.loop();
+    if (mqtt.connected() && millis() - lastHeartbeat > 15000) {
+      lastHeartbeat = millis();
+      ioiotPublish(mqtt, TOPIC_STATE, "state", "{\\"online\\":true}", false);
+    }
   }
 }
 `;
@@ -528,8 +565,8 @@ void loop() {
         const board = device.board || 'esp32';
         const isArduino = ['uno', 'nano', 'mega'].includes(board);
         const isESP8266 = board === 'esp8266';
-        const ssid = device.wifiSSID || 'demo';
-        const pass = device.wifiPassword || '12345678';
+        const ssid = cString(device.wifiSSID || 'demo');
+        const pass = cString(device.wifiPassword || '12345678');
         const isUSB = device.mode === 'usb';
 
         const pinMacroFn = (p) => `PIN_${sanitize(p.label)}`;
@@ -663,8 +700,10 @@ ${board === 'esp32' ? '#include "soc/soc.h"\n#include "soc/rtc_cntl_reg.h"\n' : 
 const char* ssid      = "${ssid}";
 const char* password  = "${pass}";
 const char* DEVICE_ID = "${device.deviceId}";
-const char* MQTT_HOST = "broker.hivemq.com";
-const int   MQTT_PORT = 1883;
+const char* MQTT_HOST = "${cString(mqttConfig.host)}";
+const int   MQTT_PORT = ${parseInt(mqttConfig.port, 10) || 1883};
+const char* MQTT_USER = "${cString(mqttConfig.username || '')}";
+const char* MQTT_PASS = "${cString(mqttConfig.password || '')}";
 
 char TOPIC_CMD[64];
 char TOPIC_STATE[64];
@@ -680,9 +719,18 @@ PubSubClient mqttClient(wifiClient);
 unsigned long lastHeartbeat = 0;
 const long    HEARTBEAT_INTERVAL = 5000;
 
+${mqttSigningCode(device.authToken)}
+
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+    static char buf[1024];
+    if (length >= sizeof(buf)) return;
+    memcpy(buf, payload, length);
+    buf[length] = 0;
+    const char* json = ioiotVerify("command", buf);
+    if (!json) { Serial.println("Ignored unsigned/invalid message"); return; }
+
     StaticJsonDocument<512> doc;
-    if (deserializeJson(doc, payload, length)) return;
+    if (deserializeJson(doc, json)) return;
     Serial.print("CMD: "); serializeJson(doc, Serial); Serial.println();
 
 ${mqttCallbackCases || '    // Configure pins in Pin Config tab'}
@@ -702,10 +750,12 @@ void connectMqtt() {
     while (!mqttClient.connected()) {
         String cid = String("ioiot-") + String(DEVICE_ID) + "-" + String(random(0xffff), HEX);
         Serial.print("MQTT...");
-        if (mqttClient.connect(cid.c_str(), nullptr, nullptr, TOPIC_STATUS, 1, true, "{\\"online\\":false}")) {
+        static char lwt[200];
+        ioiotSignInto("status", 0, "{\\"online\\":false}", lwt, sizeof(lwt));
+        if (mqttClient.connect(cid.c_str(), MQTT_USER[0] ? MQTT_USER : nullptr, MQTT_PASS[0] ? MQTT_PASS : nullptr, TOPIC_STATUS, 1, true, lwt)) {
             Serial.println(" connected.");
             mqttClient.subscribe(TOPIC_CMD, 1);
-            mqttClient.publish(TOPIC_STATUS, "{\\"online\\":true}", true);
+            ioiotPublish(mqttClient, TOPIC_STATUS, "status", "{\\"online\\":true}", true);
         } else {
             Serial.print(" rc="); Serial.print(mqttClient.state()); Serial.println(" retry 3s");
             delay(3000);
@@ -715,6 +765,7 @@ void connectMqtt() {
 
 void setup() {
 ${board.includes('esp32') ? '    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector\n' : ''}    Serial.begin(115200);
+    ioiotNewSession();
     snprintf(TOPIC_CMD,    sizeof(TOPIC_CMD),    "ioiot/%s/command", DEVICE_ID);
     snprintf(TOPIC_STATE,  sizeof(TOPIC_STATE),  "ioiot/%s/state",   DEVICE_ID);
     snprintf(TOPIC_STATUS, sizeof(TOPIC_STATUS), "ioiot/%s/status",  DEVICE_ID);
@@ -725,7 +776,7 @@ ${setupPins}
     mqttClient.setServer(MQTT_HOST, MQTT_PORT);
     mqttClient.setCallback(onMqttMessage);
     mqttClient.setKeepAlive(60);
-    mqttClient.setBufferSize(512);
+    mqttClient.setBufferSize(1400);
     connectMqtt();
     Serial.println("IoIoT MQTT Ready.");
 }
@@ -741,7 +792,7 @@ void loop() {
         doc["online"] = true;
 ${heartbeatFields}
         char buf[512]; serializeJson(doc, buf);
-        mqttClient.publish(TOPIC_STATE, buf);
+        ioiotPublish(mqttClient, TOPIC_STATE, "state", buf, false);
     }
 }`;
     };
@@ -1081,15 +1132,25 @@ ${heartbeatFields}
                     </div>
                     <div>
                         <button onClick={async () => {
+                            setWifiStatus('saving');
                             try {
                                 await axios.put(`${API}/api/devices/${id}`, { wifiSSID, wifiPassword }, { headers });
                                 setDevice(prev => ({ ...prev, wifiSSID, wifiPassword }));
-                                setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
-                            } catch { }
-                        }} className="w-full h-[38px] rounded-lg bg-orange-500 hover:bg-orange-600 text-black font-mono font-bold text-sm transition-colors flex items-center justify-center gap-2">
-                            <Check className="w-4 h-4" /> Save WiFi
+                                setWifiStatus('saved'); setTimeout(() => setWifiStatus(''), 2500);
+                            } catch (err) {
+                                setWifiStatus('error:' + (err.response?.data?.error || err.message));
+                            }
+                        }} disabled={wifiStatus === 'saving'}
+                            className={`w-full h-[38px] rounded-lg text-black font-mono font-bold text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-60 ${wifiStatus === 'saved' ? 'bg-green-500' : 'bg-orange-500 hover:bg-orange-600'}`}>
+                            <Check className="w-4 h-4" /> {wifiStatus === 'saving' ? 'Saving...' : wifiStatus === 'saved' ? 'Saved!' : 'Save WiFi'}
                         </button>
                     </div>
+                    {wifiStatus.startsWith('error:') && (
+                        <p className="col-span-full font-mono text-[11px] text-red-400">Could not save WiFi: {wifiStatus.slice(6)}</p>
+                    )}
+                    {(wifiSSID !== (device.wifiSSID || '') || wifiPassword !== (device.wifiPassword || '')) && wifiStatus !== 'saving' && (
+                        <p className="col-span-full font-mono text-[11px] text-yellow-500">Unsaved changes — click Save WiFi, then re-download or re-flash the code.</p>
+                    )}
                     <p className={`col-span-full font-mono text-[10px] ${mutedText}`}>
                         WiFi credentials are stored securely and auto-filled in generated code.
                     </p>

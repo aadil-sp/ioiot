@@ -6,7 +6,14 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['user', 'admin', 'shopkeeper'], default: 'user' },
   isApproved: { type: Boolean, default: false },
   walletBalance: { type: Number, default: 0 },
-  shopName: { type: String, trim: true } // Only used if role is 'shopkeeper'
+  shopName: { type: String, trim: true }, // Only used if role is 'shopkeeper'
+  profile: {
+    displayName: { type: String, trim: true, maxlength: 50, default: '' },
+    bio: { type: String, trim: true, maxlength: 300, default: '' },
+    avatarColor: { type: String, default: '#f97316' },
+    betaMode: { type: Boolean, default: false },
+    notifications: { type: Boolean, default: true },
+  }
 });
 
 module.exports = mongoose.model('User', userSchema);

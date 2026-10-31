@@ -3,6 +3,7 @@ import axios from 'axios';
 import { motion } from 'framer-motion';
 import { User, Lock, Zap, Palette, Save, Check, Eye, EyeOff, FlaskConical, Cpu, Shield, Bell, Globe } from 'lucide-react';
 import { ThemeContext } from '../App';
+import { cacheProfile } from '../utils/profileCache';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -47,8 +48,25 @@ export default function Profile() {
     const [pwSuccess, setPwSuccess] = useState(false);
     const [pwError, setPwError] = useState('');
     const [profileSaved, setProfileSaved] = useState(false);
+    const [profileSaving, setProfileSaving] = useState(false);
+    const [profileError, setProfileError] = useState('');
 
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+
+    const applyProfile = (p = {}) => {
+        setDisplayName(p.displayName || username);
+        setBio(p.bio || '');
+        setAvatarColor(p.avatarColor || '#f97316');
+        setBetaMode(!!p.betaMode);
+        setNotifications(p.notifications !== false);
+    };
+
+    // Load the saved profile from the server (works across browsers/devices)
+    useEffect(() => {
+        axios.get(`${API}/api/profile`, { headers })
+            .then(res => { applyProfile(res.data.profile); cacheProfile(res.data.profile); })
+            .catch(() => setProfileError('Could not load your saved profile'));
+    }, []);
 
     const card = dark ? 'bg-[#0A0A0A] border-[#1a1a1a]' : 'bg-white border-gray-200';
     const inputCls = dark
@@ -57,14 +75,18 @@ export default function Profile() {
     const mutedText = dark ? 'text-[#999]' : 'text-gray-400';
     const labelCls = `block text-[10px] font-mono uppercase tracking-widest mb-1.5 ${mutedText}`;
 
-    const saveProfile = () => {
-        localStorage.setItem('displayName', displayName);
-        localStorage.setItem('bio', bio);
-        localStorage.setItem('avatarColor', avatarColor);
-        localStorage.setItem('betaMode', betaMode.toString());
-        localStorage.setItem('notifications', notifications.toString());
-        setProfileSaved(true);
-        setTimeout(() => setProfileSaved(false), 2500);
+    const saveProfile = async () => {
+        setProfileSaving(true); setProfileError('');
+        try {
+            const res = await axios.put(`${API}/api/profile`,
+                { displayName: displayName === username ? '' : displayName, bio, avatarColor, betaMode, notifications },
+                { headers });
+            cacheProfile(res.data.profile);
+            setProfileSaved(true);
+            setTimeout(() => setProfileSaved(false), 2500);
+        } catch (err) {
+            setProfileError(err.response?.data?.error || 'Failed to save profile');
+        } finally { setProfileSaving(false); }
     };
 
     const changePassword = async () => {
@@ -246,10 +268,11 @@ export default function Profile() {
                 </motion.div>
 
                 {/* Save Button */}
-                <div className="flex justify-end">
-                    <button onClick={saveProfile}
-                        className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all ${profileSaved ? 'bg-green-500 text-black' : 'bg-orange-500 hover:bg-orange-400 text-black'}`}>
-                        {profileSaved ? <><Check className="w-4 h-4" /> Saved!</> : <><Save className="w-4 h-4" /> Save Profile</>}
+                <div className="flex items-center justify-end gap-4">
+                    {profileError && <span className="text-xs font-mono text-red-400">{profileError}</span>}
+                    <button onClick={saveProfile} disabled={profileSaving}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-60 ${profileSaved ? 'bg-green-500 text-black' : 'bg-orange-500 hover:bg-orange-400 text-black'}`}>
+                        {profileSaved ? <><Check className="w-4 h-4" /> Saved!</> : <><Save className="w-4 h-4" /> {profileSaving ? 'Saving...' : 'Save Profile'}</>}
                     </button>
                 </div>
             </div>
