@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">IoIoT</string>
+    <string name="title_activity_main">IoIoT</string>
+    <string name="package_name">app.ioiot.mobile</string>
+    <string name="custom_url_scheme">app.ioiot.mobile</string>
+</resources>

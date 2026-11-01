@@ -1,0 +1,12 @@
+{
+  "appId": "app.ioiot.mobile",
+  "appName": "IoIoT",
+  "webDir": "dist",
+  "server": {
+    "url": "https://ioiot.vercel.app",
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#12121a"
+  }
+}
