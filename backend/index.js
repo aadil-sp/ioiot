@@ -21,6 +21,7 @@ const Reading = require('./models/Reading');
 const Rule = require('./models/Rule');
 const Notification = require('./models/Notification');
 const { authenticate, requireAdmin, JWT_SECRET } = require('./middleware/auth');
+const libraries = require('./routes/libraries');
 
 const app = express();
 const server = http.createServer(app);
@@ -416,6 +417,7 @@ const isOwnerOrAdmin = (device, user) => {
 // ─── Connect to MongoDB ──────────────────────────────────────────────────────
 mongoose.connect(MONGO_URI).then(async () => {
     console.log('MongoDB connected');
+    restoreLibraries().catch(e => console.error('Library restore failed:', e.message));
 
     // Seed admin only when ADMIN_PASSWORD is provided (no hardcoded passwords)
     const adminExists = await User.findOne({ username: 'admin' });
@@ -1195,6 +1197,9 @@ app.use('/api/inkqueue', require('./routes/inkqueue'));
 app.get('/', (req, res) => {
     res.send('<h1>IoIoT Platform v2.0 — MQTT</h1><p>Status: <span style="color: green;">Online</span></p><p>Backend is running on Hugging Face Spaces.</p>');
 });
+
+// ─── Arduino libraries (search / install, shared by everyone) ────────────────
+const restoreLibraries = libraries(app, { Settings, mongoose });
 
 // ─── ESP32 Compile Endpoint ──────────────────────────────────────────────────
 // Public (used by the Web Editor), so cap code size and concurrent compiles

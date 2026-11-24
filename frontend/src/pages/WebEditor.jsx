@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Upload, Terminal, Trash2, Send, Cpu, ChevronDown,
     Usb, AlertTriangle, Check, Download, BookOpen,
-    Code2, Zap, Info, Copy
+    Code2, Zap, Info, Copy, Search, PlayCircle
 } from 'lucide-react';
 import { ThemeContext } from '../App';
+import Esp32Simulator from '../components/Esp32Simulator';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -36,6 +37,7 @@ const BOARDS = [
     { fqbn: 'esp32:esp32:esp32', label: '🔷 ESP32 Dev Module' },
     { fqbn: 'esp32:esp32:esp32s2', label: '🔷 ESP32-S2' },
     { fqbn: 'esp32:esp32:esp32s3', label: '🔷 ESP32-S3' },
+    { fqbn: 'esp32:esp32:esp32c3:CDCOnBoot=cdc', label: '🔷 ESP32-C3 SuperMini (USB serial)' },
     { fqbn: 'esp32:esp32:esp32c3', label: '🔷 ESP32-C3' },
     { fqbn: 'esp8266:esp8266:nodemcuv2', label: '🔵 ESP8266 NodeMCU v2' },
     { fqbn: 'esp8266:esp8266:d1_mini', label: '🔵 ESP8266 D1 Mini' },
@@ -304,6 +306,14 @@ export default function WebEditor() {
     const [activePanel, setActivePanel] = useState('terminal'); // 'terminal' | 'serial' | 'libs'
     const [showTemplates, setShowTemplates] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [showSim, setShowSim] = useState(false);
+
+    // Libraries on the compile server: search the Arduino index and install for everyone
+    const [libQuery, setLibQuery] = useState('');
+    const [libResults, setLibResults] = useState(null);
+    const [installedLibs, setInstalledLibs] = useState(null);
+    const [libBusy, setLibBusy] = useState('');
+    const [libMsg, setLibMsg] = useState('');
 
     // Serial Monitor
     const [serialConnected, setSerialConnected] = useState(false);
@@ -581,6 +591,36 @@ export default function WebEditor() {
         setTimeout(() => setCopied(false), 2000);
     };
 
+    useEffect(() => {
+        if (activePanel !== 'libs' || installedLibs) return;
+        fetch(`${API}/api/libs`).then(r => r.ok ? r.json() : []).then(setInstalledLibs).catch(() => setInstalledLibs([]));
+    }, [activePanel, installedLibs]);
+    const searchLibs = async (e) => {
+        e.preventDefault();
+        if (libQuery.trim().length < 2) return;
+        setLibBusy('search'); setLibMsg('');
+        try {
+            const r = await fetch(`${API}/api/libs/search?q=${encodeURIComponent(libQuery.trim())}`);
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || 'Search failed');
+            setLibResults(data);
+        } catch (err) { setLibMsg(err.message); setLibResults([]); }
+        setLibBusy('');
+    };
+    const installLib = async (lib) => {
+        setLibBusy(lib.name); setLibMsg('');
+        try {
+            const r = await fetch(`${API}/api/libs/install`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: lib.name }) });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || 'Install failed');
+            setLibMsg(`✅ ${lib.name} installed on the compile server — everyone can use it now.`);
+            setInstalledLibs(null);
+            if (lib.includes && lib.includes[0]) insertLib(`#include <${lib.includes[0]}>`);
+        } catch (err) { setLibMsg(`❌ ${err.message}`); }
+        setLibBusy('');
+    };
+    const isInstalled = (name) => (installedLibs || []).some(l => l.name === name);
+
     const insertLib = (include) => {
         if (code.includes(include)) return;
         if (!editorRef.current) {
@@ -678,6 +718,15 @@ export default function WebEditor() {
                         className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg border transition-all ${dark ? 'border-[#333] text-gray-400 hover:text-white' : 'border-gray-300 text-gray-600 hover:text-gray-900'}`}>
                         <Download className="w-3.5 h-3.5" />
                         .ino
+                    </button>
+
+                    {/* Simulate */}
+                    <button
+                        onClick={() => setShowSim(true)}
+                        className={`flex items-center gap-1.5 text-xs font-mono font-bold px-4 py-1.5 rounded-lg border transition-all ${dark ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10' : 'border-emerald-500 text-emerald-700 hover:bg-emerald-50'}`}
+                        title="Run this sketch on a simulated ESP32-C3 with sensors and motors"
+                    >
+                        <PlayCircle className="w-3.5 h-3.5" /> Simulate
                     </button>
 
                     {/* Compile */}
@@ -948,6 +997,28 @@ export default function WebEditor() {
                     {/* ── Libraries Panel ─────────────────────────────────── */}
                     {activePanel === 'libs' && (
                         <div className={`flex-1 overflow-y-auto p-3 space-y-1`}>
+                            <form onSubmit={searchLibs} className="flex gap-1.5 mb-2">
+                                <input value={libQuery} onChange={e => setLibQuery(e.target.value)} placeholder="Search Arduino libraries (e.g. NewPing, DHT)"
+                                    className={`flex-1 min-w-0 text-xs font-mono border rounded-lg px-2.5 py-1.5 outline-none ${dark ? 'bg-[#0d0d14] border-[#252535] text-white' : 'bg-white border-gray-300'}`} />
+                                <button type="submit" disabled={libBusy === 'search'} className="px-2.5 rounded-lg bg-blue-600 text-white disabled:opacity-50" aria-label="Search"><Search className="w-3.5 h-3.5" /></button>
+                            </form>
+                            {libMsg && <p className={`text-[11px] font-mono mb-2 ${dark ? 'text-gray-300' : 'text-gray-700'}`}>{libMsg}</p>}
+                            {libResults && (
+                                <div className="mb-4 space-y-1">
+                                    {libResults.length === 0 && <p className={`text-[11px] font-mono ${dark ? 'text-[#555]' : 'text-gray-500'}`}>No libraries found.</p>}
+                                    {libResults.map(lib => (
+                                        <div key={lib.name} className={`p-2.5 rounded-xl border ${dark ? 'bg-[#0d0d14] border-[#1a1a2a]' : 'bg-gray-50 border-gray-200'}`}>
+                                            <div className="flex items-center gap-2">
+                                                <p className={`font-mono text-xs font-bold flex-1 min-w-0 truncate ${dark ? 'text-white' : 'text-gray-900'}`}>{lib.name} <span className="opacity-50 font-normal">{lib.version}</span></p>
+                                                {isInstalled(lib.name)
+                                                    ? <button onClick={() => lib.includes[0] && insertLib(`#include <${lib.includes[0]}>`)} className="text-[10px] font-mono px-2 py-1 rounded-md border border-green-500/40 text-green-500">Installed · insert</button>
+                                                    : <button onClick={() => installLib(lib)} disabled={!!libBusy} className="text-[10px] font-mono px-2 py-1 rounded-md bg-orange-500 text-black disabled:opacity-50">{libBusy === lib.name ? 'Installing…' : 'Install'}</button>}
+                                            </div>
+                                            <p className={`font-mono text-[10px] mt-0.5 ${dark ? 'text-[#555]' : 'text-gray-500'}`}>{lib.sentence}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                             <p className={`text-[10px] font-mono uppercase tracking-widest mb-3 ${dark ? 'text-[#444]' : 'text-gray-400'}`}>
                                 Pre-installed Libraries — click to insert
                             </p>
@@ -978,7 +1049,7 @@ export default function WebEditor() {
                                     <p className="font-mono text-xs font-bold text-orange-500">About Libraries</p>
                                 </div>
                                 <p className={`font-mono text-[10px] leading-relaxed ${dark ? 'text-[#666]' : 'text-gray-500'}`}>
-                                    All libraries above are pre-installed on the compile server. Click any library to add its #include to your code. Cloud compilation uses arduino-cli with the ESP32 core.
+                                    Search above to install any library from the Arduino library index onto the compile server — once installed it's available to everyone. Click a library to add its #include to your code.
                                 </p>
                             </div>
                         </div>
@@ -1006,6 +1077,8 @@ export default function WebEditor() {
                     IoIoT Web Editor · No Login Required
                 </div>
             </div>
+
+            {showSim && <Esp32Simulator code={code} onCode={setCode} onClose={() => setShowSim(false)} storageKey="ioiot.webeditor.sim" title="Your sketch on an ESP32-C3" />}
 
             {/* Click-outside to close templates */}
             {showTemplates && (

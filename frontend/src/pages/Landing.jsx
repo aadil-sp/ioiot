@@ -51,6 +51,12 @@ export default function Landing() {
                             Try Web Editor
                             <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">No Login</span>
                         </Link>
+                        <Link to="/simulator"
+                            className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-violet-700 text-white font-bold text-lg hover:shadow-[0_0_30px_rgba(168,85,247,0.5)] hover:scale-105 transition-all flex items-center justify-center gap-2">
+                            <Terminal className="w-5 h-5" />
+                            Try the ESP32 Simulator
+                            <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">No Login</span>
+                        </Link>
                         <Link to="/login"
                             className={`w-full sm:w-auto px-8 py-4 rounded-2xl border font-bold text-lg hover:scale-105 transition-all ${dark ? 'border-[#333] text-gray-300 hover:border-orange-500 hover:text-white bg-[#111]' : 'border-gray-300 text-gray-700 hover:border-orange-500 hover:text-orange-600 bg-white'}`}>
                             Log In
