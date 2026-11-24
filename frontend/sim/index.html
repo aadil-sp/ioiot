@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32-C3 Simulator</title>
+<style>/*CSS*/</style>
+</head>
+<body>
+<header class="bar">
+  <strong class="brand" id="title">ESP32-C3 Simulator</strong>
+  <button id="run" class="primary" type="button">▶ Run</button>
+  <button id="stop" type="button" disabled>■ Stop</button>
+  <select id="project" aria-label="Load an example"></select>
+  <select id="world" aria-label="World">
+    <option value="none">No world</option>
+    <option value="arena">Robot arena</option>
+    <option value="line">Line track</option>
+    <option value="bin">Smart dustbin</option>
+  </select>
+  <div class="add"><button id="addBtn" type="button">+ Part</button><div id="palette" class="pop" hidden></div></div>
+  <button id="sound" type="button" class="icon" title="Buzzer sound on/off">🔊</button>
+  <span id="status" class="status">Ready</span><span id="clock" class="clock"></span>
+</header>
+<main class="main">
+  <section class="stage">
+    <nav class="tabs" id="stageTabs"><button type="button" data-tab="circuit" class="on">Circuit</button><button type="button" data-tab="world" hidden>World</button></nav>
+    <div class="pane" id="circuitPane"><svg id="svg" viewBox="0 0 1100 700" preserveAspectRatio="xMidYMid meet"></svg><div class="hint" id="hint"></div></div>
+    <div class="pane" id="worldPane" hidden><canvas id="worldCanvas"></canvas><div class="world-tools" id="worldTools"></div></div>
+  </section>
+  <aside class="side">
+    <nav class="tabs" id="sideTabs"><button type="button" data-tab="serial" class="on">Serial</button><button type="button" data-tab="remote">Remote</button><button type="button" data-tab="part">Part</button><button type="button" data-tab="code">Code</button></nav>
+    <div class="pane" id="serialPane">
+      <pre id="out"></pre>
+      <form id="serialForm"><input id="serialIn" placeholder="Send to Serial…" autocomplete="off"><select id="lineEnd" aria-label="Line ending"><option value="nl">Newline</option><option value="none">No ending</option><option value="crlf">CR+LF</option></select><button type="submit">Send</button><button type="button" id="clearSerial" class="icon" title="Clear">⌫</button></form>
+    </div>
+    <div class="pane" id="remotePane" hidden></div>
+    <div class="pane" id="partPane" hidden></div>
+    <div class="pane" id="codePane" hidden><textarea id="code" spellcheck="false" aria-label="Sketch"></textarea></div>
+  </aside>
+</main>
+<script>/*JS*/</script>
+</body>
+</html>

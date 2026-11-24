@@ -9,6 +9,7 @@ import DeviceDetail from './pages/DeviceDetail';
 import Profile from './pages/Profile';
 import Landing from './pages/Landing';
 import WebEditor from './pages/WebEditor';
+import Esp32Simulator from './components/Esp32Simulator';
 import { Cpu, LogOut, LayoutDashboard, Shield, Sun, Moon, User, Menu, X, Bell, Code2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { isGuest, endGuestSession, sendGuestHeartbeat } from './utils/guest';
@@ -43,6 +44,13 @@ function NavContent({ auth, setAuth, dark, toggle, mobile, onClose }) {
         className={`flex items-center gap-2 text-sm px-4 py-2 rounded-xl border transition-all ${dark ? 'bg-[#1a1a2e] border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.15)]' : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'}`}>
         <Code2 className="w-4 h-4" />
         <span className="hidden sm:inline font-bold">Web Editor</span>
+      </Link>
+
+      {/* ESP32-C3 simulator — public */}
+      <Link to="/simulator" onClick={onClose}
+        className={`flex items-center gap-2 text-sm px-4 py-2 rounded-xl border transition-all ${dark ? 'bg-[#10231b] border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}`}>
+        <Cpu className="w-4 h-4" />
+        <span className="hidden sm:inline font-bold">Simulator</span>
       </Link>
 
       {token && (
@@ -213,14 +221,15 @@ function AppShell({ auth, setAuth, dark, toggle }) {
         )}
       </AnimatePresence>
 
-      <main className={`flex-1 relative ${location.pathname === '/web-editor' ? 'overflow-hidden' : 'overflow-x-hidden'}`}>
+      <main className={`flex-1 relative ${['/web-editor', '/simulator'].includes(location.pathname) ? 'overflow-hidden' : 'overflow-x-hidden'}`}>
         <div className={`absolute top-1/4 left-1/4 w-[50vw] h-[50vh] rounded-full blur-[120px] pointer-events-none ${dark ? 'bg-orange-600/5' : 'bg-orange-400/8'}`}></div>
-        <div className={`relative z-10 ${location.pathname === '/web-editor' ? 'h-full flex flex-col' : ''}`}>
+        <div className={`relative z-10 ${['/web-editor', '/simulator'].includes(location.pathname) ? 'h-full flex flex-col' : ''}`}>
           <Routes>
             <Route path="/login" element={<Login setAuth={setAuth} />} />
             <Route path="/register" element={<Register />} />
             {/* Web Editor — public, no login required */}
             <Route path="/web-editor" element={<WebEditor />} />
+            <Route path="/simulator" element={<div className="h-full flex flex-col"><div className="flex-1 min-h-0"><Esp32Simulator storageKey="ioiot.simulator" /></div></div>} />
             <Route path="/admin" element={auth.token && auth.role === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
             <Route path="/dashboard" element={auth.token ? <UserDashboard /> : <Navigate to="/login" />} />
             <Route path="/device/:id" element={auth.token ? <DeviceDetail /> : <Navigate to="/login" />} />
