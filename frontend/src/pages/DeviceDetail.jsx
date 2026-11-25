@@ -5,6 +5,7 @@ import { mqttSigningCode } from '../utils/mqttSigning';
 import { wifiSetupCode } from '../utils/wifiSetup';
 import { io } from 'socket.io-client';
 import { ESPLoader, Transport } from 'esptool-js';
+import { resetToApp, withOtaData } from '../utils/flashReset';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Wifi, WifiOff, Settings, Plus, Trash2, Save,
@@ -978,7 +979,7 @@ ${heartbeatFields}
             addLog(`📤 Flashing ${fileArray.length} files...`);
 
             await loader.writeFlash({
-                fileArray,
+                fileArray: withOtaData(fileArray),
                 flashSize: 'keep',
                 flashMode: 'keep',
                 flashFreq: 'keep',
@@ -994,7 +995,7 @@ ${heartbeatFields}
             setFlashProgress(100);
             setFlashDone(true);
             addLog('✅ Flash complete! ESP32 is restarting with your new code.');
-            await loader.after();
+            await resetToApp(transport);
             await transport.disconnect();
         } catch (err) {
             console.error(err);
