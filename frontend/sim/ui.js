@@ -1,7 +1,11 @@
 // The simulator page: circuit editor, world view, serial monitor, remote and part inspector.
 // Embedded (HyperClass, IoIoT editor) it talks to its parent with postMessage:
-//   in:  { type: 'load', code, project, template, theme, autorun, showEditor, title }  { type: 'code', code }  { type: 'theme', theme }
-//   out: { type: 'sim-ready' }  { type: 'sim-project', project }  { type: 'sim-code', code }  { type: 'sim-status', running }
+//   in:  { type: 'load', code, project, template, theme, autorun, showEditor, title, chrome }  { type: 'code', code }  { type: 'theme', theme }
+//        { type: 'run' }  { type: 'stop' }  { type: 'example', id }  { type: 'serial-in', text }
+//   out: { type: 'sim-ready', examples }  { type: 'sim-project', project }  { type: 'sim-code', code }  { type: 'sim-status', running }
+//        { type: 'sim-serial', text, kind }  { type: 'sim-serial-clear' }
+// chrome: 'studio' hides the run bar, serial and code (the parent shows its own) and keeps the circuit,
+// components, settings and remote.
 (function () {
     const { CATALOG, GROUPS, esc } = window.SimParts;
     const { Board, makeApi, BOARD_PINS, LED_BUILTIN, BOOT_PIN, Stop } = window.SimRuntime;
@@ -16,7 +20,8 @@
 
     const state = {
         project: null, code: '', running: false, selected: null, wiring: null, drag: null,
-        theme: 'dark', showEditor: !embedded, sim: null, prefs: {}, response: null, title: ''
+        theme: 'dark', showEditor: !embedded, sim: null, prefs: {}, response: null, title: '',
+        studio: false, view: null, pan: null, adding: null
     };
     const world = new World('none');
 
@@ -49,16 +54,19 @@
         return WIRE_COLORS[i % WIRE_COLORS.length];
     }
     let saveTimer = null;
+    function save() {
+        saveTimer = null;
+        commit();
+        if (embedded) window.parent.postMessage({ type: 'sim-project', project: exportProject() }, '*');
+        else try { localStorage.setItem('esp32sim.project', JSON.stringify(exportProject())); localStorage.setItem('esp32sim.code', state.code); } catch { }
+    }
     function changed() {
         clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
-            if (embedded) window.parent.postMessage({ type: 'sim-project', project: exportProject() }, '*');
-            else try { localStorage.setItem('esp32sim.project', JSON.stringify(exportProject())); localStorage.setItem('esp32sim.code', state.code); } catch { }
-        }, 400);
+        saveTimer = setTimeout(save, 400);
     }
     function exportProject() {
         const p = state.project;
-        return { board: p.board, world: p.world, parts: p.parts.map(({ id, type, x, y, props }) => ({ id, type, x, y, props })), wires: p.wires.map(({ id, a, b, color }) => ({ id, a, b, color })) };
+        return { board: p.board, world: p.world, parts: p.parts.map(({ id, type, x, y, rot, props }) => ({ id, type, x, y, ...(rot ? { rot } : {}), props })), wires: p.wires.map(({ id, a, b, color }) => ({ id, a, b, color })) };
     }
     function loadProject(p) {
         stop();
@@ -66,8 +74,62 @@
         world.setType(state.project.world || 'none');
         $('world').value = world.type;
         state.selected = null;
+        state.view = null;
         state.sim = new Board(host);
+        hist.stack = [JSON.stringify(exportProject())]; hist.at = 0;
         renderAll();
+    }
+
+    // ---------------- undo / redo ----------------
+    // Snapshots of the circuit, taken when a change settles (the same moment it is saved)
+    const hist = { stack: [], at: -1 };
+    function commit() {
+        const snap = JSON.stringify(exportProject());
+        if (hist.stack[hist.at] === snap) return;
+        hist.stack = hist.stack.slice(0, hist.at + 1);
+        hist.stack.push(snap);
+        if (hist.stack.length > 100) hist.stack.shift();
+        hist.at = hist.stack.length - 1;
+        renderTools();
+    }
+    function undoRedo(step) {
+        if (saveTimer) { clearTimeout(saveTimer); save(); }
+        const at = hist.at + step;
+        if (at < 0 || at >= hist.stack.length) return;
+        hist.at = at;
+        const p = normalize(JSON.parse(hist.stack[at]));
+        state.project = p;
+        if (world.type !== (p.world || 'none')) { world.setType(p.world || 'none'); $('world').value = world.type; }
+        state.selected = null; state.wiring = null;
+        if (state.sim) state.sim.markDirty();
+        renderAll();
+        if (embedded) window.parent.postMessage({ type: 'sim-project', project: exportProject() }, '*');
+        else try { localStorage.setItem('esp32sim.project', JSON.stringify(exportProject())); } catch { }
+    }
+
+    // ---------------- rotation ----------------
+    // Parts turn in steps of 90° about their centre (clockwise, as SVG's rotate() does)
+    function turn(rot, x, y) {
+        return rot === 90 ? [-y, x] : rot === 180 ? [-x, -y] : rot === 270 ? [y, -x] : [x, y];
+    }
+    function partPin(part, pd) {
+        const def = CATALOG[part.type];
+        const rot = part.rot || 0;
+        const cx = def.w / 2, cy = def.h / 2;
+        const [rx, ry] = turn(rot, pd.x - cx, pd.y - cy);
+        let dx = pd.x <= 6 ? -1 : pd.x >= def.w - 6 ? 1 : 0;
+        let dy = dx ? 0 : (pd.y >= def.h - 10 ? 1 : pd.y <= 8 ? -1 : 1);
+        [dx, dy] = turn(rot, dx, dy);
+        return { x: part.x + cx + rx, y: part.y + cy + ry, dx, dy };
+    }
+    function rotateSelected() {
+        const sel = state.selected;
+        if (!sel || sel.kind !== 'part') return;
+        const part = state.project.parts.find(p => p.id === sel.id);
+        if (!part) return;
+        part.rot = ((part.rot || 0) + 90) % 360;
+        if (state.sim) state.sim.markDirty();
+        changed(); renderCircuit();
     }
 
     // ---------------- host for the runtime ----------------
@@ -86,6 +148,7 @@
     // ---------------- serial ----------------
     let outLen = 0;
     function serialOut(text, kind) {
+        if (state.studio) post({ type: 'sim-serial', text, kind: kind || '' });
         const out = $('out');
         const atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
         const last = out.lastChild;
@@ -117,6 +180,7 @@
         stop();
         const token = ++runToken;
         $('out').textContent = ''; outLen = 0;
+        post({ type: 'sim-serial-clear' });
         state.sim = new Board(host);
         world.trail = [];
         const sim = state.sim;
@@ -204,12 +268,8 @@
         if (owner === 'board') { const p = boardPins().find(b => b.key === key); return p ? { x: p.x, y: p.y, dx: p.side === 'left' ? -1 : 1, dy: 0, board: true } : null; }
         const part = state.project.parts.find(p => p.id === owner);
         if (!part) return null;
-        const def = CATALOG[part.type];
-        const pd = def.pins.find(x => x.id === pin);
-        if (!pd) return null;
-        const dx = pd.x <= 6 ? -1 : pd.x >= def.w - 6 ? 1 : 0;
-        const dy = dx ? 0 : (pd.y >= def.h - 10 ? 1 : pd.y <= 8 ? -1 : 1);
-        return { x: part.x + pd.x, y: part.y + pd.y, dx, dy };
+        const pd = CATALOG[part.type].pins.find(x => x.id === pin);
+        return pd ? partPin(part, pd) : null;
     }
     function wirePath(a, b) {
         // A board pin on the far side leaves the board along its top or bottom edge instead of crossing it
@@ -259,7 +319,7 @@
         const all = [...boardPins().map(p => ({ key: p.key, x: p.x, y: p.y, label: pinLabelOf(p.key) }))];
         for (const part of state.project.parts) {
             const def = CATALOG[part.type];
-            for (const pd of def.pins) all.push({ key: `${part.id}:${pd.id}`, x: part.x + pd.x, y: part.y + pd.y, label: `${def.label} · ${pd.label}` });
+            for (const pd of def.pins) { const at = partPin(part, pd); all.push({ key: `${part.id}:${pd.id}`, x: at.x, y: at.y, label: `${def.label} · ${pd.label}` }); }
         }
         const from = state.wiring && state.wiring.from;
         return all.map(p => `<g class="pin${conn.has(p.key) ? ' on' : ''}${from === p.key ? ' from' : ''}" data-pin="${p.key}">
@@ -269,7 +329,7 @@
         return state.project.parts.map(part => {
             const def = CATALOG[part.type];
             const sel = state.selected && state.selected.kind === 'part' && state.selected.id === part.id;
-            return `<g data-part="${part.id}" transform="translate(${part.x},${part.y})" class="part${sel ? ' sel' : ''}${def.clickable ? ' clickable' : ''}">
+            return `<g data-part="${part.id}" transform="translate(${part.x},${part.y})${part.rot ? ` rotate(${part.rot} ${def.w / 2} ${def.h / 2})` : ''}" class="part${sel ? ' sel' : ''}${def.clickable ? ' clickable' : ''}">
                 ${sel ? `<rect x="-6" y="-12" width="${def.w + 12}" height="${def.h + 18}" rx="8" class="selbox"/>` : ''}
                 ${def.svg(part)}
                 ${pinLabels(def)}
@@ -299,12 +359,14 @@
     // Zoom to the circuit (frozen while dragging or wiring so things don't jump under the pointer)
     let viewBox = '0 0 1100 700';
     function fitView() {
-        if (state.drag || state.wiring) return viewBox;
+        if (state.view) { const v = state.view; viewBox = `${Math.round(v.x)} ${Math.round(v.y)} ${Math.round(v.w)} ${Math.round(v.h)}`; return viewBox; }
+        if (state.drag || state.wiring || state.adding) return viewBox;
         const b = state.project.board;
-        let x0 = b.x - 30, y0 = b.y - 30, x1 = b.x + BOARD.w + 30, y1 = b.y + BOARD.h + 30;
+        let x0 = b.x - 30, y0 = b.y - (state.studio ? 110 : 70), x1 = b.x + BOARD.w + 30, y1 = b.y + BOARD.h + 30; // room above for the toolbar
         for (const p of state.project.parts) {
             const d = CATALOG[p.type];
-            x0 = Math.min(x0, p.x - 30); y0 = Math.min(y0, p.y - 40); x1 = Math.max(x1, p.x + d.w + 30); y1 = Math.max(y1, p.y + d.h + 40);
+            const half = p.rot === 90 || p.rot === 270 ? (d.h - d.w) / 2 : 0; // a turned part is h wide and w tall
+            x0 = Math.min(x0, p.x - half - 30); y0 = Math.min(y0, p.y + half - 40); x1 = Math.max(x1, p.x + d.w + half + 30); y1 = Math.max(y1, p.y + d.h - half + 40);
         }
         let w = Math.max(560, x1 - x0), h = Math.max(380, y1 - y0);
         const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
@@ -326,8 +388,9 @@
             <rect x="-2000" y="-2000" width="5000" height="5000" fill="url(#grid)" data-bg="1"/>
             ${drawBoard()}${drawParts()}${drawWires()}${preview}${drawPins()}`;
         $('hint').textContent = state.wiring ? `Wiring from ${pinLabelOf(state.wiring.from)} — click another pin (Esc cancels)`
-            : state.project.parts.length ? 'Click a pin, then another pin, to add a wire. Drag parts to move them. Select something and press Delete to remove it.'
-                : 'Add parts with "+ Part", then click pin to pin to wire them to the ESP32-C3.';
+            : state.project.parts.length ? 'Click a pin, then another pin, to add a wire. Drag parts to move them. R rotates, Delete removes, scroll zooms, drag the background to pan.'
+                : `Drag components in from the ${state.studio ? 'Components panel' : '"+ Part" menu or the Components tab'}, then click pin to pin to wire them to the ESP32-C3.`;
+        renderTools();
     }
 
     // ---------------- inspector ----------------
@@ -435,7 +498,7 @@
     function showTab(group, name) {
         document.querySelectorAll(`#${group} button`).forEach(b => b.classList.toggle('on', b.dataset.tab === name));
         if (group === 'stageTabs') { $('circuitPane').hidden = name !== 'circuit'; $('worldPane').hidden = name !== 'world'; if (name === 'world') sizeWorld(); }
-        else ['serial', 'remote', 'part', 'code'].forEach(t => { $(t + 'Pane').hidden = t !== name; });
+        else ['parts', 'serial', 'remote', 'part', 'code'].forEach(t => { $(t + 'Pane').hidden = t !== name; });
         if (name === 'remote') renderRemote();
         if (name === 'part') renderInspector();
     }
@@ -514,10 +577,23 @@
             renderCircuit(); renderInspector(); showTab('sideTabs', 'part');
             return;
         }
-        state.selected = null; state.wiring = null;
+        state.selected = null;
+        if (state.wiring) state.wiring = null;
+        else { state.pan = { x: e.clientX, y: e.clientY, v: currentView(), moved: false }; $('svg').setPointerCapture(e.pointerId); }
+        if (state.studio && !$('partPane').hidden) showTab('sideTabs', 'parts');
         renderCircuit(); renderInspector();
     });
     $('svg').addEventListener('pointermove', (e) => {
+        if (state.pan) {
+            const pn = state.pan, r = $('svg').getBoundingClientRect();
+            const k = Math.max(pn.v.w / r.width, pn.v.h / r.height);
+            const dx = (e.clientX - pn.x) * k, dy = (e.clientY - pn.y) * k;
+            if (!pn.moved && Math.abs(dx) + Math.abs(dy) < 3 * k) return;
+            pn.moved = true;
+            state.view = { ...pn.v, x: pn.v.x - dx, y: pn.v.y - dy };
+            renderCircuit();
+            return;
+        }
         const p = svgPoint(e);
         if (state.wiring) { state.wiring.to = { x: p.x, y: p.y }; renderCircuit(); return; }
         const d = state.drag;
@@ -535,6 +611,7 @@
         }
     });
     const endDrag = () => {
+        state.pan = null;
         const d = state.drag;
         if (!d) return;
         if (d.boot && state.sim) { state.sim.bootPressed = false; state.sim.markDirty(); }
@@ -545,6 +622,25 @@
     };
     $('svg').addEventListener('pointerup', endDrag);
     $('svg').addEventListener('pointercancel', endDrag);
+
+    // ---------------- zoom ----------------
+    function currentView() {
+        const [x, y, w, h] = $('svg').getAttribute('viewBox').split(/\s+/).map(Number);
+        return { x, y, w, h };
+    }
+    function zoom(factor, at) {
+        const v = currentView();
+        const w = Math.max(220, Math.min(5000, v.w * factor));
+        const k = w / v.w;
+        const cx = at ? at.x : v.x + v.w / 2, cy = at ? at.y : v.y + v.h / 2;
+        state.view = { x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k, w, h: v.h * k };
+        renderCircuit();
+    }
+    function fit() { state.view = null; renderCircuit(); }
+    $('svg').addEventListener('wheel', (e) => {
+        e.preventDefault();
+        zoom(Math.exp(Math.max(-0.5, Math.min(0.5, e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)))), svgPoint(e));
+    }, { passive: false });
 
     function deleteSelected() {
         const sel = state.selected;
@@ -608,6 +704,9 @@
         const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement && document.activeElement.tagName);
         if (typing) return;
         if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) { e.preventDefault(); deleteSelected(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoRedo(e.shiftKey ? 1 : -1); return; }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); undoRedo(1); return; }
+        if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey && state.selected) { rotateSelected(); return; }
         if (e.key === 'Escape') { state.wiring = null; renderCircuit(); return; }
         const dir = KEYS[e.key];
         if (dir && state.running && !held.has(e.key)) { e.preventDefault(); held.add(e.key); remote(dir, true); }
@@ -637,21 +736,41 @@
     $('stop').addEventListener('click', stop);
     $('sound').addEventListener('click', () => { muted = !muted; $('sound').textContent = muted ? '🔇' : '🔊'; sound(0); });
     $('project').innerHTML = `<option value="">Examples…</option>${PROJECTS.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('')}`;
-    $('project').addEventListener('change', (e) => {
+    $('project').addEventListener('change', async (e) => {
         const t = PROJECTS.find(p => p.id === e.target.value);
         e.target.value = '';
         if (!t) return;
         const hasWork = state.project.parts.length || state.project.wires.length;
-        if (hasWork && !confirm(`Replace your circuit with "${t.title}"?`)) return;
+        const ownCode = state.code.trim() && !PROJECTS.some(x => x.code.trim() === state.code.trim());
+        let choice = 'all';
+        if (hasWork || ownCode) {
+            choice = await ask(`Open "${t.title}"? It replaces what is on the circuit${ownCode ? ' and, if you choose, your code' : ''}.`,
+                ownCode ? [['all', 'Circuit and code'], ['circuit', 'Circuit only'], ['', 'Cancel']] : [['all', 'Open'], ['', 'Cancel']]);
+            if (!choice) return;
+        }
         loadProject(fromTemplate(t));
         changed();
-        const replaceCode = !state.code.trim() || state.code.trim() === (PROJECTS.find(x => x.code.trim() === state.code.trim()) || {}).code?.trim()
-            || confirm('Also load this example\'s code? (Your current code will be replaced.)');
-        if (replaceCode) {
+        if (choice === 'all') {
             setCode(t.code);
             post({ type: 'sim-code', code: t.code });
         }
     });
+    // A question on the page: confirm() is blocked in the sandboxed frame the sites embed this in
+    function ask(text, options) {
+        return new Promise(resolve => {
+            const box = $('ask');
+            box.innerHTML = `<div class="ask-card" role="dialog" aria-modal="true"><p>${esc(text)}</p><div class="ask-btns">${options.map(([v, label], i) => `<button type="button" data-v="${v}" class="${i === 0 ? 'primary' : ''}">${esc(label)}</button>`).join('')}</div></div>`;
+            box.hidden = false;
+            box.onclick = (ev) => {
+                const b = ev.target.closest('[data-v]');
+                if (!b && ev.target !== box) return;
+                box.hidden = true; box.onclick = box.onkeydown = null;
+                resolve(b ? b.dataset.v : '');
+            };
+            box.onkeydown = (ev) => { if (ev.key === 'Escape') { box.hidden = true; box.onclick = box.onkeydown = null; resolve(''); } };
+            box.querySelector('button').focus();
+        });
+    }
     $('world').addEventListener('change', (e) => {
         world.setType(e.target.value);
         state.project.world = e.target.value;
@@ -663,15 +782,8 @@
     $('palette').addEventListener('click', (e) => {
         const t = e.target.closest('[data-add]');
         if (!t) return;
-        const def = CATALOG[t.dataset.add];
-        const n = state.project.parts.length;
-        const id = t.dataset.add.replace(/\d+$/, '') + (Date.now() % 100000).toString(36);
-        const left = n % 2 === 1;
-        const part = { id, type: t.dataset.add, x: left ? 140 + (n % 3) * 30 : 700 + (n % 3) * 40, y: 100 + (n * 70) % 460, props: { ...def.props } };
-        state.project.parts.push(part);
-        state.selected = { kind: 'part', id };
         $('palette').hidden = true;
-        changed(); renderCircuit(); renderInspector(); showTab('sideTabs', 'part');
+        addPart(t.dataset.add);
     });
     document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.add')) $('palette').hidden = true; });
     document.querySelectorAll('.tabs').forEach(nav => nav.addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) showTab(nav.id, b.dataset.tab); }));
@@ -685,6 +797,121 @@
     $('clearSerial').addEventListener('click', () => { $('out').textContent = ''; outLen = 0; });
     $('code').addEventListener('input', () => { state.code = $('code').value; if (embedded) post({ type: 'sim-code', code: state.code }); changed(); });
     function setCode(code) { state.code = code || ''; $('code').value = state.code; }
+
+    // ---------------- adding parts ----------------
+    // at: where to drop it (circuit coordinates); without it, beside the board
+    function addPart(type, at) {
+        const def = CATALOG[type];
+        const n = state.project.parts.length;
+        const b = state.project.board;
+        const id = type.replace(/\d+$/, '') + (Date.now() % 100000).toString(36);
+        const x = at ? at.x - def.w / 2 : n % 2 === 1 ? b.x - 310 + (n % 3) * 30 : b.x + 250 + (n % 3) * 40;
+        const y = at ? at.y - def.h / 2 : b.y - 70 + (n * 70) % 460;
+        state.project.parts.push({ id, type, x: Math.round(x), y: Math.round(y), props: { ...def.props } });
+        state.selected = { kind: 'part', id };
+        if (state.sim) state.sim.markDirty();
+        changed(); renderCircuit(); renderInspector(); showTab('sideTabs', 'part');
+    }
+    function thumb(type) {
+        const def = CATALOG[type];
+        let inner = '';
+        try { inner = def.svg({ id: 'thumb', type, x: 0, y: 0, props: { ...def.props } }); } catch { }
+        return `<svg viewBox="-4 -4 ${def.w + 8} ${def.h + 8}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${inner}</svg>`;
+    }
+    function renderComponents() {
+        const q = $('compSearch').value.trim().toLowerCase();
+        const html = GROUPS.map(g => {
+            const items = Object.entries(CATALOG).filter(([t, d]) => d.group === g && (!q || d.label.toLowerCase().includes(q) || t.includes(q) || (d.notes || '').toLowerCase().includes(q)));
+            if (!items.length) return '';
+            return `<h5>${g}</h5><div class="comp-grid">${items.map(([t, d]) => `<button type="button" class="comp" data-comp="${t}" title="${esc(d.notes || d.label)}">${thumb(t)}<span>${esc(d.label)}</span></button>`).join('')}</div>`;
+        }).join('');
+        $('compList').innerHTML = html || '<p class="empty">No components match.</p>';
+    }
+    $('compSearch').addEventListener('input', renderComponents);
+    $('compList').addEventListener('pointerdown', (e) => {
+        const c = e.target.closest('[data-comp]');
+        if (!c) return;
+        e.preventDefault();
+        state.adding = { type: c.dataset.comp, x: e.clientX, y: e.clientY, moved: false };
+    });
+    document.addEventListener('pointermove', (e) => {
+        const a = state.adding;
+        if (!a) return;
+        if (!a.moved && Math.hypot(e.clientX - a.x, e.clientY - a.y) < 6) return;
+        a.moved = true;
+        const g = $('ghost');
+        if (g.hidden) { g.innerHTML = thumb(a.type); g.hidden = false; }
+        g.style.transform = `translate(${e.clientX - 32}px, ${e.clientY - 32}px)`;
+    });
+    document.addEventListener('pointerup', (e) => {
+        const a = state.adding;
+        if (!a) return;
+        state.adding = null;
+        $('ghost').hidden = true;
+        if (!a.moved) { addPart(a.type); return; }
+        const r = $('svg').getBoundingClientRect();
+        if (!$('circuitPane').hidden && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) addPart(a.type, svgPoint(e));
+    });
+
+    // ---------------- canvas toolbar ----------------
+    const WIRE_SWATCH = ['#3b4048', '#e03131', '#f08c00', '#fcc419', '#2b9348', '#1971c2', '#7048e8', '#868e96', '#f1f3f5', '#8d5524'];
+    const ico = (d) => `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+    const ICON = {
+        rotate: ico('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+        trash: ico('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>'),
+        undo: ico('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'),
+        redo: ico('<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>'),
+        minus: ico('<circle cx="11" cy="11" r="7"/><path d="M8 11h6"/><path d="m21 21-5-5"/>'),
+        plus: ico('<circle cx="11" cy="11" r="7"/><path d="M8 11h6M11 8v6"/><path d="m21 21-5-5"/>'),
+        fit: ico('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>')
+    };
+    let toolsKey = '';
+    function renderTools() {
+        const sel = state.selected;
+        const wire = sel && sel.kind === 'wire' ? state.project.wires.find(w => w.id === sel.id) : null;
+        const key = [sel && sel.kind, sel && sel.id, wire && wire.color, hist.at, hist.stack.length].join('|');
+        if (key === toolsKey) return;
+        toolsKey = key;
+        const isPart = sel && sel.kind === 'part';
+        $('toolBtns').innerHTML = `
+            <button type="button" data-t="rotate" title="Rotate (R)" ${isPart ? '' : 'disabled'}>${ICON.rotate}</button>
+            <button type="button" data-t="delete" title="Delete (Del)" ${isPart || wire ? '' : 'disabled'}>${ICON.trash}</button>
+            <span class="sep"></span>
+            <button type="button" data-t="undo" title="Undo (Ctrl+Z)" ${hist.at > 0 ? '' : 'disabled'}>${ICON.undo}</button>
+            <button type="button" data-t="redo" title="Redo (Ctrl+Shift+Z)" ${hist.at < hist.stack.length - 1 ? '' : 'disabled'}>${ICON.redo}</button>
+            <span class="sep"></span>
+            <button type="button" data-t="zoomout" title="Zoom out">${ICON.minus}</button>
+            <button type="button" data-t="zoomin" title="Zoom in">${ICON.plus}</button>
+            <button type="button" data-t="fit" title="Fit the circuit to the view">${ICON.fit}</button>
+            ${wire ? `<span class="sep"></span><span class="swatches" title="Wire colour">${WIRE_SWATCH.map(c => `<button type="button" data-color="${c}" class="sw${c === wire.color ? ' on' : ''}" style="background:${c}" aria-label="Wire colour ${c}"></button>`).join('')}</span>` : ''}`;
+    }
+    $('canvasTools').innerHTML = '<span id="toolBtns" class="tool-btns"></span><span id="toolExtra" class="tool-extra"></span>';
+    $('canvasTools').addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.color) {
+            const w = state.selected && state.project.wires.find(x => x.id === state.selected.id);
+            if (w) { w.color = b.dataset.color; changed(); renderCircuit(); renderInspector(); }
+            return;
+        }
+        ({ rotate: rotateSelected, delete: deleteSelected, undo: () => undoRedo(-1), redo: () => undoRedo(1),
+            zoomin: () => zoom(1 / 1.25), zoomout: () => zoom(1.25), fit }[b.dataset.t] || (() => { }))();
+    });
+    function fmtTime(sec) {
+        const m = Math.floor(sec / 60), s = sec - m * 60;
+        return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`;
+    }
+
+    // ---------------- studio (embedded in an IDE that has its own run bar, serial and code) ----------------
+    function enterStudio() {
+        if (state.studio) return;
+        state.studio = true;
+        document.body.classList.add('studio');
+        ['serial', 'code'].forEach(t => { document.querySelector(`#sideTabs [data-tab="${t}"]`).hidden = true; });
+        $('toolExtra').append($('world'), $('sound'));
+        showTab('sideTabs', 'parts');
+        renderCircuit();
+    }
 
     // ---------------- animation ----------------
     // Physics runs on its own timer by elapsed time (small steps), so the car moves at the
@@ -714,8 +941,10 @@
             if (!state.wiring || frame % 3 === 0) renderCircuit();
         }
         if (!$('worldPane').hidden) world.render($('worldCanvas'), state.project.parts, state.theme);
+        $('simTimer').hidden = !state.running;
         if (state.running) {
             $('clock').textContent = ((now - (state.t0 || now)) / 1000).toFixed(1) + ' s';
+            $('simTimer').textContent = 'Simulator time ' + fmtTime((now - (state.t0 || now)) / 1000);
             const buzz = state.project.parts.filter(p => p.type === 'buzzer' && p.state && p.state.on).map(p => p.state.freq);
             sound(buzz.length ? Math.max(...buzz) : 0);
             if (remoteDirty && !$('remotePane').hidden) renderRemote();
@@ -751,6 +980,7 @@
         const d = e.data || {};
         if (d.type === 'load') {
             if (d.theme) setTheme(d.theme);
+            if (d.chrome === 'studio') enterStudio();
             state.showEditor = !!d.showEditor;
             document.querySelector('#sideTabs [data-tab="code"]').hidden = !state.showEditor;
             if (d.title) { state.title = d.title; $('title').textContent = d.title; }
@@ -761,8 +991,17 @@
         } else if (d.type === 'code') {
             setCode(d.code);
         } else if (d.type === 'theme') setTheme(d.theme);
-        else if (d.type === 'run') run();
+        else if (d.type === 'run') { run(); if (world.type !== 'none') showTab('stageTabs', 'world'); }
         else if (d.type === 'stop') stop();
+        else if (d.type === 'serial-in') { if (state.sim) state.sim.serialIn += String(d.text || ''); }
+        else if (d.type === 'example') {
+            const t = PROJECTS.find(p => p.id === d.id);
+            if (!t) return;
+            loadProject(fromTemplate(t));
+            changed();
+            setCode(t.code);
+            post({ type: 'sim-code', code: t.code });
+        }
     });
     window.addEventListener('resize', () => { if (!$('worldPane').hidden) sizeWorld(); });
 
@@ -778,5 +1017,8 @@
     updateButtons();
     window.__esp32sim = { state, world }; // for debugging from the console
     requestAnimationFrame(tick);
-    post({ type: 'sim-ready' });
+    renderComponents();
+    // A run started by the parent has no click inside this page, so wake the buzzer's audio on the first one
+    document.addEventListener('pointerdown', () => { if (audio && audio.state === 'suspended') audio.resume(); });
+    post({ type: 'sim-ready', examples: PROJECTS.map(p => ({ id: p.id, title: p.title })) });
 })();

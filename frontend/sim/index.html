@@ -25,11 +25,16 @@
 <main class="main">
   <section class="stage">
     <nav class="tabs" id="stageTabs"><button type="button" data-tab="circuit" class="on">Circuit</button><button type="button" data-tab="world" hidden>World</button></nav>
-    <div class="pane" id="circuitPane"><svg id="svg" viewBox="0 0 1100 700" preserveAspectRatio="xMidYMid meet"></svg><div class="hint" id="hint"></div></div>
+    <div class="pane" id="circuitPane"><div class="canvas-tools" id="canvasTools"></div><div class="sim-timer" id="simTimer" hidden></div><svg id="svg" viewBox="0 0 1100 700" preserveAspectRatio="xMidYMid meet"></svg><div class="hint" id="hint"></div></div>
     <div class="pane" id="worldPane" hidden><canvas id="worldCanvas"></canvas><div class="world-tools" id="worldTools"></div></div>
   </section>
   <aside class="side">
-    <nav class="tabs" id="sideTabs"><button type="button" data-tab="serial" class="on">Serial</button><button type="button" data-tab="remote">Remote</button><button type="button" data-tab="part">Part</button><button type="button" data-tab="code">Code</button></nav>
+    <nav class="tabs" id="sideTabs"><button type="button" data-tab="parts">Components</button><button type="button" data-tab="part">Settings</button><button type="button" data-tab="serial" class="on">Serial</button><button type="button" data-tab="remote">Remote</button><button type="button" data-tab="code">Code</button></nav>
+    <div class="pane" id="partsPane" hidden>
+      <div class="comp-search"><input id="compSearch" type="search" placeholder="Search components…" autocomplete="off" aria-label="Search components"></div>
+      <div id="compList" class="comp-list"></div>
+      <p class="muted small comp-tip">Drag a component onto the circuit, or click it to add it.</p>
+    </div>
     <div class="pane" id="serialPane">
       <pre id="out"></pre>
       <form id="serialForm"><input id="serialIn" placeholder="Send to Serial…" autocomplete="off"><select id="lineEnd" aria-label="Line ending"><option value="nl">Newline</option><option value="none">No ending</option><option value="crlf">CR+LF</option></select><button type="submit">Send</button><button type="button" id="clearSerial" class="icon" title="Clear">⌫</button></form>
@@ -39,6 +44,8 @@
     <div class="pane" id="codePane" hidden><textarea id="code" spellcheck="false" aria-label="Sketch"></textarea></div>
   </aside>
 </main>
+<div id="ghost" class="ghost" hidden></div>
+<div id="ask" class="ask" hidden></div>
 <script>/*JS*/</script>
 </body>
 </html>
