@@ -5,7 +5,7 @@ import { ThemeContext } from '../App';
 
 // The ESP32-C3 simulator (public/esp32c3-sim.html) in a sandboxed frame.
 // With `code` it runs that sketch (the Web Editor's); without it the simulator shows its own editor.
-// The circuit is kept in this browser under `storageKey`.
+// The circuit is kept in this browser under `storageKey` (and, with its own editor, the code too).
 export default function Esp32Simulator({ code, onCode, onClose, storageKey = 'ioiot.sim.project', title }) {
     const { dark } = useContext(ThemeContext);
     const frame = useRef(null);
@@ -17,11 +17,11 @@ export default function Esp32Simulator({ code, onCode, onClose, storageKey = 'io
 
     useEffect(() => {
         const load = () => {
-            let project;
-            try { project = JSON.parse(localStorage.getItem(storageKey)); } catch { }
+            let project, savedCode = null;
+            try { project = JSON.parse(localStorage.getItem(storageKey)); savedCode = localStorage.getItem(`${storageKey}.code`); } catch { }
             frame.current?.contentWindow?.postMessage({
                 type: 'load', theme: dark ? 'dark' : 'light', title: title || 'ESP32-C3 Simulator',
-                code: embedded ? code : undefined, project: project || undefined, template: project ? undefined : 'blink',
+                code: embedded ? code : (project && savedCode !== null ? savedCode : undefined), project: project || undefined, template: project ? undefined : 'blink',
                 showEditor: !embedded, autorun: embedded
             }, '*');
         };
@@ -30,7 +30,10 @@ export default function Esp32Simulator({ code, onCode, onClose, storageKey = 'io
             const d = e.data || {};
             if (d.type === 'sim-ready') load();
             if (d.type === 'sim-project') try { localStorage.setItem(storageKey, JSON.stringify(d.project)); } catch { }
-            if (d.type === 'sim-code' && onCode) onCode(d.code);
+            if (d.type === 'sim-code') {
+                if (onCode) onCode(d.code);
+                else try { localStorage.setItem(`${storageKey}.code`, d.code); } catch { } // the simulator's own editor
+            }
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);

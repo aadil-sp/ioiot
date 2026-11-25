@@ -736,21 +736,41 @@
     $('stop').addEventListener('click', stop);
     $('sound').addEventListener('click', () => { muted = !muted; $('sound').textContent = muted ? '🔇' : '🔊'; sound(0); });
     $('project').innerHTML = `<option value="">Examples…</option>${PROJECTS.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('')}`;
-    $('project').addEventListener('change', (e) => {
+    $('project').addEventListener('change', async (e) => {
         const t = PROJECTS.find(p => p.id === e.target.value);
         e.target.value = '';
         if (!t) return;
         const hasWork = state.project.parts.length || state.project.wires.length;
-        if (hasWork && !confirm(`Replace your circuit with "${t.title}"?`)) return;
+        const ownCode = state.code.trim() && !PROJECTS.some(x => x.code.trim() === state.code.trim());
+        let choice = 'all';
+        if (hasWork || ownCode) {
+            choice = await ask(`Open "${t.title}"? It replaces what is on the circuit${ownCode ? ' and, if you choose, your code' : ''}.`,
+                ownCode ? [['all', 'Circuit and code'], ['circuit', 'Circuit only'], ['', 'Cancel']] : [['all', 'Open'], ['', 'Cancel']]);
+            if (!choice) return;
+        }
         loadProject(fromTemplate(t));
         changed();
-        const replaceCode = !state.code.trim() || state.code.trim() === (PROJECTS.find(x => x.code.trim() === state.code.trim()) || {}).code?.trim()
-            || confirm('Also load this example\'s code? (Your current code will be replaced.)');
-        if (replaceCode) {
+        if (choice === 'all') {
             setCode(t.code);
             post({ type: 'sim-code', code: t.code });
         }
     });
+    // A question on the page: confirm() is blocked in the sandboxed frame the sites embed this in
+    function ask(text, options) {
+        return new Promise(resolve => {
+            const box = $('ask');
+            box.innerHTML = `<div class="ask-card" role="dialog" aria-modal="true"><p>${esc(text)}</p><div class="ask-btns">${options.map(([v, label], i) => `<button type="button" data-v="${v}" class="${i === 0 ? 'primary' : ''}">${esc(label)}</button>`).join('')}</div></div>`;
+            box.hidden = false;
+            box.onclick = (ev) => {
+                const b = ev.target.closest('[data-v]');
+                if (!b && ev.target !== box) return;
+                box.hidden = true; box.onclick = box.onkeydown = null;
+                resolve(b ? b.dataset.v : '');
+            };
+            box.onkeydown = (ev) => { if (ev.key === 'Escape') { box.hidden = true; box.onclick = box.onkeydown = null; resolve(''); } };
+            box.querySelector('button').focus();
+        });
+    }
     $('world').addEventListener('change', (e) => {
         world.setType(e.target.value);
         state.project.world = e.target.value;

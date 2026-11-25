@@ -119,3 +119,7 @@ body.studio .comp-grid { grid-template-columns:repeat(auto-fill, minmax(78px, 1f
 @media (max-width: 760px) { body.studio { overflow:hidden; } }
 @media (max-width: 520px) { body.studio .main { grid-template-columns:1fr; grid-template-rows:minmax(0, 1fr) 40%; } body.studio .side { border-left:0; border-top:1px solid var(--line); } }
 body.studio .tabs { overflow-x:auto; scrollbar-width:none; } body.studio .tabs button { white-space:nowrap; padding:6px 8px; }
+.ask { position:fixed; inset:0; z-index:60; display:grid; place-items:center; padding:16px; background:#0008; }
+.ask-card { width:min(420px, 100%); padding:16px 18px; border:1px solid var(--line); border-radius:12px; background:var(--panel); box-shadow:0 16px 40px #0007; }
+.ask-card p { margin:0 0 14px; font-size:14px; }
+.ask-btns { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
