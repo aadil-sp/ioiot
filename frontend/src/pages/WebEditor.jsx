@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useContext, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { ESPLoader, Transport } from 'esptool-js';
+import { resetToApp, withOtaData } from '../utils/flashReset';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Upload, Terminal, Trash2, Send, Cpu, ChevronDown,
@@ -489,7 +490,7 @@ export default function WebEditor() {
             addLog(`📤 Flashing ${fileArray.length} files...`);
 
             await loader.writeFlash({
-                fileArray,
+                fileArray: withOtaData(fileArray),
                 flashSize: 'keep',
                 flashMode: 'keep',
                 flashFreq: 'keep',
@@ -504,7 +505,7 @@ export default function WebEditor() {
             setFlashProgress(100);
             setFlashDone(true);
             addLog('✅ Flash complete! ESP32 restarting with your new code.');
-            await loader.after();
+            await resetToApp(transport);
             await transport.disconnect();
         } catch (err) {
             addLog('❌ Flash failed: ' + err.message, true);
